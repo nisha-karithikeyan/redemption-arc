@@ -50,16 +50,9 @@ const RELAX = [
  {ico:"📓",name:"Journaling",desc:"Write 3 honest lines about today"},
  {ico:"🧩",name:"Puzzle / Sudoku",desc:"One puzzle, no scrolling after"},
  {ico:"🍲",name:"New Healthy Recipe",desc:"Try cooking one new simple dish"},
- {ico:"🧊",name:"Cold Reset",desc:"Splash cold water on your face / a short cold shower"},
- {ico:"🗣️",name:"Micro Language Drill",desc:"Learn 5 new words in a language you want to speak"},
  {ico:"🧹",name:"Declutter Sprint",desc:"Tidy one drawer, desk, or corner — 10 min, timer on"},
  {ico:"🤸",name:"Stretch Flow",desc:"10 min of mobility / stretching, no gym needed"},
- {ico:"📞",name:"Reach Out",desc:"Call or voice-note one person you've been meaning to talk to"},
- {ico:"🧱",name:"Build Something",desc:"Origami, Lego, a small fix-it — anything with your hands"},
- {ico:"🎬",name:"Intentional Watch",desc:"One documentary clip or talk, 15-20 min, phone away after"},
- {ico:"🫁",name:"Box Breathing",desc:"4-4-4-4 breathing, 10 slow rounds"},
- {ico:"🗒️",name:"Tomorrow on Paper",desc:"Plan tomorrow by hand — no app, just pen and paper"},
- {ico:"🃏",name:"Skill Drill",desc:"10 min practicing one tiny skill — card trick, knot, juggling"},
+ {ico:"🎬",name:"Movie Night",desc:"Watch one movie, phone away, actually enjoy it"},
 ];
 function relaxForIndex(i){return RELAX[(i-1)%RELAX.length];}
 
