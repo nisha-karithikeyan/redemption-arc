@@ -621,70 +621,74 @@ function renderToday(){
       ${sc.flags.map(f=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;font-size:13px;color:var(--bad);"><span>&#9888;</span><span>${f}</span></div>`).join('')}
     </div>` : ''}
 
-    <div class="grid grid-2">
-      <div class="card">
-        <div class="section-title" style="margin-top:0;">Non-negotiables</div>
-        <div class="fields-grid">
-          <label class="field"><span>Wake time</span>${timePicker('f-wake', d.wake)}<span class="faint" style="font-size:10.5px;">goal: by 7:30 AM</span></label>
-          <label class="field"><span>Sleep time</span>${timePicker('f-sleep', d.sleep)}<span class="faint" style="font-size:10.5px;">1:00 AM counts as 2h past the 11:00 PM curfew, not early</span></label>
-          <label class="field"><span>Steps</span><input type="number" id="f-steps" min="0" step="100" value="${d.steps??''}" placeholder="8000-10000"></label>
-          <label class="field"><span>Water (L)</span><input type="number" id="f-water" min="0" max="5" step="0.1" value="${d.water??''}" placeholder="3"></label>
-          <label class="field"><span>Calories</span><input type="number" id="f-calories" min="0" step="10" value="${d.calories??''}" placeholder="1200"></label>
-        </div>
-        <label class="field" style="margin-top:12px;"><span>Career task — what did you actually do today?</span>
-          <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
-            ${CAREER_TASKS.map(t=>`<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:400;color:var(--text);"><input type="checkbox" class="chk career-task-chk" data-key="${t.key}" ${d.careerTasks && d.careerTasks[t.key]?'checked':''}> ${t.label}</label>`).join('')}
-          </div>
-        </label>
-        <label class="field" style="margin-top:12px;"><span>Stayed off junk / sodium-heavy food today?</span>
-          <div class="toggle-row"><button class="toggle ${d.junkFree? 'active-yes':''}" data-field="junkFree" data-val="true">Clean</button><button class="toggle ${d.junkFree===false? 'active-no':''}" data-field="junkFree" data-val="false">Slipped</button></div>
-        </label>
-      </div>
-
-      <div class="card">
-        <div class="section-title" style="margin-top:0;">Extra signal (bonus points)</div>
-        <div class="fields-grid">
-          <label class="field"><span>Screen time (hrs)</span><input type="number" id="f-screen" min="0" step="0.5" value="${d.screenTime??''}"></label>
-          <label class="field"><span>Focus hours (career)</span><input type="number" id="f-focus" min="0" step="0.5" value="${d.focusHours??''}"></label>
-          <label class="field"><span>Weight (kg)</span><input type="number" id="f-weight" min="0" step="0.1" value="${d.weight??''}" placeholder="weekly is fine"></label>
-          <label class="field"><span>Mood (1-5)</span>
-            <div style="display:flex;align-items:center;gap:10px;">
-              <input type="range" id="f-mood" min="1" max="5" step="1" value="${d.mood||3}" style="flex:1;">
-              <span id="moodVal" class="mono" style="font-size:18px;min-width:28px;text-align:center;">${MOOD_EMOJI[(d.mood||3)-1]}</span>
-            </div>
-          </label>
-        </div>
-        <label class="field" style="margin-top:12px;"><span>Ordered Zepto / Zomato today?</span>
-          <div class="toggle-row"><button class="toggle ${d.ordered===false? 'active-yes':''}" data-field="ordered" data-val="false">No</button><button class="toggle ${d.ordered? 'active-no':''}" data-field="ordered" data-val="true">Yes</button></div>
-        </label>
-        <label class="field" id="spentRow" style="margin-top:10px;" ${d.ordered? '':'hidden'}><span>₹ Spent on that order</span><input type="number" id="f-spent" min="0" step="10" value="${d.amountSpent??''}" placeholder="0"></label>
-        <div class="fields-grid" style="margin-top:12px;">
-          <label class="field"><span>₹ Other spend today (food, shopping, anything on yourself)</span><input type="number" id="f-otherspend" min="0" step="10" value="${d.otherSpend??''}" placeholder="0"></label>
-          <label class="field"><span>What was it for?</span><input type="text" id="f-othernote" value="${d.otherSpendNote||''}" placeholder="e.g. coffee, clothes, movie"></label>
-        </div>
+    <div class="section-title" style="margin-top:0;">\u{1F3C3} Physical</div>
+    <div class="card">
+      <div class="fields-grid">
+        <label class="field"><span>Wake time</span>${timePicker('f-wake', d.wake)}<span class="faint" style="font-size:10.5px;">goal: by 7:30 AM</span></label>
+        <label class="field"><span>Sleep time</span>${timePicker('f-sleep', d.sleep)}<span class="faint" style="font-size:10.5px;">1:00 AM counts as 2h past the 11:00 PM curfew, not early</span></label>
+        <label class="field"><span>Steps</span><input type="number" id="f-steps" min="0" step="100" value="${d.steps??''}" placeholder="8000-10000"></label>
+        <label class="field"><span>Water (L)</span><input type="number" id="f-water" min="0" max="5" step="0.1" value="${d.water??''}" placeholder="3"></label>
+        <label class="field"><span>Weight (kg)</span><input type="number" id="f-weight" min="0" step="0.1" value="${d.weight??''}" placeholder="weekly is fine"></label>
       </div>
     </div>
 
-    <div class="grid grid-2" style="margin-top:14px;">
-      <div class="card">
-        <div class="section-title" style="margin-top:0;">Today's relax activity</div>
-        <label class="field"><span>Pick one${d.relaxChoice?'':' (suggested: '+suggested.name+')'}</span>
-          <select id="relaxPicker">${RELAX.map(r=>`<option value="${r.name}" ${r.name===relax.name?'selected':''}>${r.ico} ${r.name}</option>`).join('')}</select>
+    <div class="section-title">\u{1F9E0} Mental</div>
+    <div class="card">
+      <div class="fields-grid">
+        <label class="field"><span>Screen time (hrs)</span><input type="number" id="f-screen" min="0" step="0.5" value="${d.screenTime??''}"></label>
+        <label class="field"><span>Mood (1-5)</span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <input type="range" id="f-mood" min="1" max="5" step="1" value="${d.mood||3}" style="flex:1;">
+            <span id="moodVal" class="mono" style="font-size:18px;min-width:28px;text-align:center;">${MOOD_EMOJI[(d.mood||3)-1]}</span>
+          </div>
         </label>
-        <div class="relax-card today" id="relaxCardToday" style="text-align:left;flex-direction:row;align-items:center;gap:12px;margin-top:10px;">
-          <div class="relax-ico" id="relaxCardIco">${relax.ico}</div>
-          <div style="flex:1;"><div class="relax-name" id="relaxCardDesc">${relax.desc}</div></div>
-          <button class="toggle ${d.relaxDone?'active-yes':''}" data-field="relaxDone" data-val="true" style="flex:none;width:auto;padding:8px 14px;">${d.relaxDone?'Done ✓':'Mark done'}</button>
-        </div>
       </div>
-      <div class="card">
-        <div class="section-title" style="margin-top:0;">Craving log</div>
-        <div style="display:flex;gap:8px;">
-          <input type="text" id="cravingTrigger" placeholder="trigger e.g. 4pm slump, stress" style="flex:1;">
-          <button class="btn secondary" id="addResisted">Resisted</button>
-          <button class="btn secondary" id="addSlipped">Slipped</button>
+      <label class="field" style="margin-top:12px;"><span>Relax activity — pick one${d.relaxChoice?'':' (suggested: '+suggested.name+')'}</span>
+        <select id="relaxPicker">${RELAX.map(r=>`<option value="${r.name}" ${r.name===relax.name?'selected':''}>${r.ico} ${r.name}</option>`).join('')}</select>
+      </label>
+      <div class="relax-card today" id="relaxCardToday" style="text-align:left;flex-direction:row;align-items:center;gap:12px;margin-top:10px;">
+        <div class="relax-ico" id="relaxCardIco">${relax.ico}</div>
+        <div style="flex:1;"><div class="relax-name" id="relaxCardDesc">${relax.desc}</div></div>
+        <button class="toggle ${d.relaxDone?'active-yes':''}" data-field="relaxDone" data-val="true" style="flex:none;width:auto;padding:8px 14px;">${d.relaxDone?'Done ✓':'Mark done'}</button>
+      </div>
+    </div>
+
+    <div class="section-title">\u{1F4BC} Career</div>
+    <div class="card">
+      <label class="field"><span>What did you actually do today?</span>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+          ${CAREER_TASKS.map(t=>`<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:400;color:var(--text);"><input type="checkbox" class="chk career-task-chk" data-key="${t.key}" ${d.careerTasks && d.careerTasks[t.key]?'checked':''}> ${t.label}</label>`).join('')}
         </div>
-        <div class="craving-list" id="cravingList"></div>
+      </label>
+      <label class="field" style="margin-top:12px;max-width:220px;"><span>Focus hours</span><input type="number" id="f-focus" min="0" step="0.5" value="${d.focusHours??''}"></label>
+    </div>
+
+    <div class="section-title">❤️ Health</div>
+    <div class="card">
+      <div class="fields-grid">
+        <label class="field"><span>Calories</span><input type="number" id="f-calories" min="0" step="10" value="${d.calories??''}" placeholder="1200"></label>
+        <label class="field"><span>Stayed off junk / sodium-heavy food today?</span>
+          <div class="toggle-row"><button class="toggle ${d.junkFree? 'active-yes':''}" data-field="junkFree" data-val="true">Clean</button><button class="toggle ${d.junkFree===false? 'active-no':''}" data-field="junkFree" data-val="false">Slipped</button></div>
+        </label>
+        <label class="field"><span>Ordered Zepto / Zomato today?</span>
+          <div class="toggle-row"><button class="toggle ${d.ordered===false? 'active-yes':''}" data-field="ordered" data-val="false">No</button><button class="toggle ${d.ordered? 'active-no':''}" data-field="ordered" data-val="true">Yes</button></div>
+        </label>
+      </div>
+      <label class="field" id="spentRow" style="margin-top:10px;max-width:220px;" ${d.ordered? '':'hidden'}><span>₹ Spent on that order</span><input type="number" id="f-spent" min="0" step="10" value="${d.amountSpent??''}" placeholder="0"></label>
+      <div class="section-title" style="margin:18px 0 8px;">Craving log</div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="cravingTrigger" placeholder="trigger e.g. 4pm slump, stress" style="flex:1;">
+        <button class="btn secondary" id="addResisted">Resisted</button>
+        <button class="btn secondary" id="addSlipped">Slipped</button>
+      </div>
+      <div class="craving-list" id="cravingList"></div>
+    </div>
+
+    <div class="section-title">\u{1F4B0} Finance</div>
+    <div class="card">
+      <div class="fields-grid">
+        <label class="field"><span>₹ Spent today (anything else — shopping, outings, etc.)</span><input type="number" id="f-otherspend" min="0" step="10" value="${d.otherSpend??''}" placeholder="0"></label>
+        <label class="field"><span>What was it for?</span><input type="text" id="f-othernote" value="${d.otherSpendNote||''}" placeholder="e.g. coffee, clothes, movie"></label>
       </div>
     </div>
 
@@ -1106,13 +1110,25 @@ function renderWeekly(){
 function exportExcel(){
   if(!window.XLSX){ toast('Export library still loading, try again'); return; }
   const wb = XLSX.utils.book_new();
+  const blank = v => (v===undefined || v===null || v==='') ? '' : v;
   const days = allDaysSorted().map(d=>{
     const sc = scoreForDay(d);
-    return {Date:d.date, Wake:d.wake?fmtTime(d.wake):'', Sleep:d.sleep?fmtTime(d.sleep):'', Steps:d.steps||'', 'Water(L)':d.water||'', Calories:d.calories||'',
-      'Junk-Free':d.junkFree===true?'Yes':d.junkFree===false?'No':'',
-      DSA:d.careerTasks&&d.careerTasks.dsa?'Yes':'', 'LinkedIn Clean-up':d.careerTasks&&d.careerTasks.linkedin?'Yes':'', 'GitHub Clean-up':d.careerTasks&&d.careerTasks.github?'Yes':'', 'Project Work':d.careerTasks&&d.careerTasks.project?'Yes':'', 'Post Work':d.careerTasks&&d.careerTasks.posts?'Yes':'',
-      'Screen Time(h)':d.screenTime||'', 'Focus Hours':d.focusHours||'', 'Weight(kg)':d.weight||'', Mood:d.mood||'',
-      'Relax Done':d.relaxDone?'Yes':'', 'Ordered Food':d.ordered?'Yes':'', 'Order Amount':d.ordered?(d.amountSpent||0):0, 'Other Spend':d.otherSpend||0, 'Other Spend For':d.otherSpendNote||'', Score: sc?sc.score:'', Notes:d.notes||''};
+    const resisted = (d.cravings||[]).filter(c=>c.resisted).length;
+    const slipped = (d.cravings||[]).filter(c=>!c.resisted).length;
+    return {
+      Date: d.date,
+      // Physical
+      Wake: blank(d.wake?fmtTime(d.wake):''), Sleep: blank(d.sleep?fmtTime(d.sleep):''), Steps: blank(d.steps), 'Water (L)': blank(d.water), 'Weight (kg)': blank(d.weight),
+      // Mental
+      'Screen Time (h)': blank(d.screenTime), Mood: blank(d.mood), 'Relax Activity': blank(d.relaxChoice), 'Relax Done': d.relaxDone?'Yes':'',
+      // Career
+      DSA: d.careerTasks&&d.careerTasks.dsa?'Yes':'', 'LinkedIn Clean-up': d.careerTasks&&d.careerTasks.linkedin?'Yes':'', 'GitHub Clean-up': d.careerTasks&&d.careerTasks.github?'Yes':'', 'Project Work': d.careerTasks&&d.careerTasks.project?'Yes':'', 'Post Work': d.careerTasks&&d.careerTasks.posts?'Yes':'', 'Focus Hours': blank(d.focusHours),
+      // Health
+      Calories: blank(d.calories), 'Junk-Free': d.junkFree===true?'Yes':d.junkFree===false?'No':'', 'Cravings Resisted': resisted||'', 'Cravings Slipped': slipped||'', 'Ordered Food': d.ordered?'Yes':'', 'Order Amount': d.ordered?(d.amountSpent||0):'',
+      // Finance
+      'Other Spend': d.otherSpend||'', 'Other Spend For': blank(d.otherSpendNote),
+      Score: sc?sc.score:'', Notes: blank(d.notes),
+    };
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(days), 'Daily Log');
 
