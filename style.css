@@ -201,3 +201,23 @@ table.history tbody tr:last-child td{border-bottom:none;}
 .score-pill.bad{background:var(--bad-bg);color:var(--bad);}
 .edit-link{background:none;border:1px solid var(--line);border-radius:7px;padding:4px 10px;font-size:11.5px;color:var(--text-dim);cursor:pointer;font-family:'IBM Plex Sans',sans-serif;}
 .edit-link:hover{background:var(--surface2);color:var(--text);}
+
+/* ---- junk-food feedback overlay ---- */
+.feedback-overlay{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:24px;cursor:pointer;}
+.feedback-overlay.celebrate{background:rgba(20,15,5,0.55);}
+.feedback-overlay.fail{background:rgba(40,10,10,0.6);animation:screenFlash 0.5s ease;}
+.feedback-card{max-width:360px;text-align:center;border-radius:20px;padding:36px 28px;box-shadow:0 20px 60px rgba(0,0,0,0.4);}
+.celebrate .feedback-card{background:linear-gradient(160deg,var(--surface),var(--surface2));border:1px solid var(--accent);animation:popIn 0.5s cubic-bezier(.34,1.56,.64,1);}
+.fail .feedback-card{background:linear-gradient(160deg,var(--surface),var(--surface2));border:1px solid var(--bad);animation:shakeIn 0.5s cubic-bezier(.36,.07,.19,.97);}
+.feedback-emoji{font-size:48px;line-height:1;margin-bottom:10px;}
+.feedback-title{font-family:'Fraunces',serif;font-size:26px;font-weight:600;margin-bottom:10px;}
+.celebrate .feedback-title{color:var(--accent);}
+.fail .feedback-title{color:var(--bad);}
+.feedback-line{font-size:14.5px;color:var(--text-dim);line-height:1.5;}
+@keyframes popIn{0%{transform:scale(0.6);opacity:0;}60%{transform:scale(1.08);opacity:1;}100%{transform:scale(1);}}
+@keyframes shakeIn{0%{transform:scale(0.9) translateX(0);opacity:0;}20%{transform:translateX(-14px);opacity:1;}40%{transform:translateX(12px);}60%{transform:translateX(-8px);}80%{transform:translateX(4px);}100%{transform:translateX(0);}}
+@keyframes screenFlash{0%{background:rgba(255,60,60,0.5);}100%{background:rgba(40,10,10,0.6);}}
+@media (prefers-reduced-motion: reduce){
+  .celebrate .feedback-card, .fail .feedback-card{animation:none;}
+  .feedback-overlay.fail{animation:none;}
+}
