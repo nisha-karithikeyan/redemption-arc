@@ -3,10 +3,10 @@
 // These values are NOT secret (they identify the project, not grant access) -
 // safe to commit and host publicly. Access control is handled by firestore.rules.
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyA1gEvIHALNfxO6MXnSQ3nxa0sGgyt3Fr4",
+  authDomain: "redemption-arc-46b99.firebaseapp.com",
+  projectId: "redemption-arc-46b99",
+  storageBucket: "redemption-arc-46b99.firebasestorage.app",
+  messagingSenderId: "939582073082",
+  appId: "1:939582073082:web:c6c9e9109725dac6044143",
 };
