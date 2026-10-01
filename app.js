@@ -410,6 +410,54 @@ function computeNoOrderStreak(){
   return streak;
 }
 
+// Blunt pace-to-goal projections — "if you keep doing exactly what you're
+// doing, here's precisely where you land on Day 90, and what that costs you."
+// No encouragement baked in; only returns items that are currently off-pace,
+// each with a stated real-world consequence of finishing at that rate.
+function computeRealityCheck(){
+  const daysElapsed = Math.max(1, TODAY_IDX);
+  const daysRemaining = TOTAL_DAYS - TODAY_IDX;
+  const careerVals = Object.values(state.career||{});
+  const postsTotal = careerVals.reduce((s,c)=>s+Number(c.posts||0),0);
+  const prodDone = careerVals.filter(c=>c.production).length;
+  const miniDone = careerVals.reduce((s,c)=>s+(c.mini1?1:0)+(c.mini2?1:0),0);
+  const dsaSolved = DSA_PROBLEMS.filter(p=>state.dsa[p.id] && state.dsa[p.id].done).length;
+  const items = [];
+
+  const pace = (done,target,label,consequence)=>{
+    const projected = Math.round((done/daysElapsed)*TOTAL_DAYS);
+    if(projected < target) items.push({label, done, target, projected, consequence: consequence(projected, target-projected)});
+  };
+
+  pace(dsaSolved, 90, 'DSA sheet', (proj,short)=>
+    `At your current solve rate you finish with ~${proj}/90 problems by Dec 30 — ${short} short. That's not enough pattern coverage to recognize problems on sight in an interview; you'll be deriving from scratch under time pressure instead of recalling.`);
+  pace(postsTotal, 48, 'LinkedIn posts', (proj,short)=>
+    `Current posting rate projects to ~${proj}/48 posts by Dec 30, ${short} short of target. A profile with that few posts over 3 months reads as dormant to a recruiter scanning it, not someone building in public.`);
+  pace(prodDone, 12, 'Production projects', (proj,short)=>
+    `You're on pace for ~${proj}/12 production-grade projects, ${short} short. A portfolio showing ${proj} finished projects is a weak signal sitting next to other candidates showing 10+.`);
+  pace(miniDone, 24, 'Mini projects', (proj,short)=>
+    `Projected ~${proj}/24 mini projects, ${short} short — less proof to employers that you ship fast and often, not just big slow projects.`);
+
+  // Daily-consistency rates: only counts days a field was actually logged,
+  // and only flags a rule whose miss-rate is high enough to matter.
+  const days = Object.values(state.days);
+  const rateCheck = (label, metFn, loggedFn, consequence)=>{
+    const logged = days.filter(loggedFn);
+    if(logged.length < 5) return; // not enough data to mean anything yet
+    const met = logged.filter(metFn).length;
+    const rate = met/logged.length;
+    if(rate < 0.6) items.push({label, done:met, target:logged.length, projected:Math.round(rate*100), consequence: consequence(Math.round(rate*100))});
+  };
+  rateCheck('Step goal', d=>Number(d.steps||0)>=8000, d=>d.steps!=null, pct=>
+    `You've hit 8,000 steps on only ${pct}% of logged days. At that consistency, expect your fat-loss timeline to roughly double against what the 1200-cal plan assumes — diet alone isn't carrying this.`);
+  rateCheck('Water goal', d=>Number(d.water||0)>=3, d=>d.water!=null, pct=>
+    `3L water hit on only ${pct}% of logged days. Chronic under-hydration reads as hunger to your brain — part of why cravings keep winning.`);
+  rateCheck('Sleep curfew', d=>d.sleep && minutesAfterNoon(d.sleep)<=SLEEP_TARGET, d=>!!d.sleep, pct=>
+    `Only ${pct}% of logged nights hit your 11pm curfew. Poor sleep directly raises next-day cravings and cuts focus — it's quietly sabotaging both the weight and career tracks at once, not just one.`);
+
+  return items;
+}
+
 /* ======================= SHELL ======================= */
 const TABS = [
  {id:'dashboard', label:'Dashboard'},
@@ -574,6 +622,14 @@ function renderDashboard(){
     </div>` : (today ? `
     <div class="section-title">Red flags today</div>
     <div class="card" style="border-color:var(--good);color:var(--good);font-size:13.5px;">&#10003; Clean day — no red flags logged.</div>` : '')}
+
+    ${(()=>{ const reality = computeRealityCheck(); return reality.length ? `
+    <div class="section-title">\u{1F4C9} Reality check — where this pace actually ends</div>
+    <div class="card" style="border-color:var(--bad);">
+      ${reality.map(r=>`<div style="padding:8px 0;border-top:1px solid var(--line);font-size:13.5px;"><strong style="color:var(--bad);">${r.label}:</strong> <span class="muted">${r.consequence}</span></div>`).join('')}
+    </div>` : `
+    <div class="section-title">\u{1F4C9} Reality check — where this pace actually ends</div>
+    <div class="card" style="border-color:var(--good);color:var(--good);font-size:13.5px;">Every tracked pace is currently on target for Day 90. That's the only thing keeping this projection clean — it recalculates from your real numbers every time you log.</div>`; })()}
 
     <div class="section-title">Career output (Oct &ndash; Dec)</div>
     <div class="card">
