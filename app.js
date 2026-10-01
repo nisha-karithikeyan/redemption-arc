@@ -1141,20 +1141,24 @@ function renderAIE(){
   }).join('<div class="aie-connector aie-month-gap"></div>');
 
   host.innerHTML = `
-    <div class="aie-hud">
-      <div class="aie-hud-level">
-        <div class="aie-level-badge">Lv ${level}</div>
-        <div><div style="font-family:'Fraunces',serif;font-size:17px;font-weight:600;">${rank}</div><div class="faint" style="font-size:12px;">${doneCount}/${AIE_NODES.length} nodes cleared</div></div>
+    <div class="aie-layout">
+      <div class="aie-side">
+        <div class="aie-hud">
+          <div class="aie-hud-level">
+            <div class="aie-level-badge">Lv ${level}</div>
+            <div><div style="font-family:'Fraunces',serif;font-size:17px;font-weight:600;">${rank}</div><div class="faint" style="font-size:12px;">${doneCount}/${AIE_NODES.length} nodes cleared</div></div>
+          </div>
+          <div>
+            <div class="bar-row"><span>XP</span><span class="num">${xp} / ${level<AIE_RANKS.length? nextThreshold : totalXP}</span></div>
+            <div class="bar"><div style="width:${levelPct}%"></div></div>
+          </div>
+        </div>
+        <div id="aieDetail"></div>
       </div>
-      <div style="flex:1;min-width:160px;">
-        <div class="bar-row"><span>XP</span><span class="num">${xp} / ${level<AIE_RANKS.length? nextThreshold : totalXP}</span></div>
-        <div class="bar"><div style="width:${levelPct}%"></div></div>
+      <div class="aie-main">
+        <div class="aie-map">${nodesHtml}</div>
       </div>
     </div>
-
-    <div class="aie-map">${nodesHtml}</div>
-
-    <div id="aieDetail"></div>
   `;
 
   host.querySelectorAll('.aie-row').forEach(row=>{
