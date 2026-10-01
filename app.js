@@ -111,6 +111,73 @@ const CORE_RULES = [
 ];
 const MILESTONES = [30,60,90];
 const MOOD_EMOJI = ["\u{1F62B}","\u{1F615}","\u{1F610}","\u{1F642}","\u{1F60A}"]; // 1..5
+
+// A different affirmation each day of the 91 (cycles if you outlast the list) —
+// shown as a celebratory overlay on a clean day. Deterministic by day index so
+// it's not random spam, just genuinely different day to day.
+const CLEAN_AFFIRMATIONS = [
+  "Discipline beats motivation. You just proved it.",
+  "That's one more brick in the arc.",
+  "Your future self just said thank you.",
+  "Cravings knocked. You didn't answer. \u{1F525}",
+  "This is what becoming someone new looks like.",
+  "Small win. Real win. Keep stacking them.",
+  "You chose long-term you over right-now you.",
+  "Nobody saw that choice but it still counted.",
+  "The old you would've ordered. You didn't.",
+  "Consistency is the whole game. You're playing it.",
+  "That's a rep in the identity you're building.",
+  "Quiet discipline. Loud results, eventually.",
+  "You kept a promise to yourself today.",
+  "This is the boring work that actually works.",
+  "One more day your word meant something.",
+  "You're not white-knuckling this anymore — you're doing it.",
+  "That craving lost. You won.",
+  "Future you is out here thriving because of today.",
+  "This is the version of you that finishes the 91.",
+  "Nobody's clapping, but I am. Great work.",
+  "Proof > promises. You just delivered proof.",
+  "You're harder to shake than you think.",
+  "The arc only rises because of days exactly like this.",
+  "You didn't negotiate with the craving. Respect.",
+  "Clean day. Clear head. Keep going.",
+  "That's self-respect in action.",
+  "You're building a reputation with yourself. It's working.",
+  "Still here. Still clean. Still climbing.",
+  "This is what showing up actually looks like.",
+  "You just made tomorrow's you a little stronger.",
+];
+// Shown on a slip-up day. Real, not harsh — the point is a reset, not shame.
+const SLIP_LINES = [
+  "Slipped today. The streak breaks, the arc doesn't.",
+  "One bad rep. The 91 days aren't over.",
+  "Noted. Reset tomorrow, not next Monday.",
+  "That one's logged. Let it end there.",
+  "Not a failure — data. Adjust and move.",
+  "Everyone misses reps. Winners log them and continue.",
+  "This is exactly why tomorrow matters more.",
+  "Craving won this round. The arc is still rising.",
+  "Log it, learn from it, let it go.",
+  "You're still 90-something days from done. Keep walking.",
+];
+function pickOfTheDay(list){ return list[(TODAY_IDX-1) % list.length]; }
+function showJunkFeedback(isClean){
+  const overlay = document.createElement('div');
+  overlay.className = 'feedback-overlay ' + (isClean? 'celebrate' : 'fail');
+  const line = isClean ? pickOfTheDay(CLEAN_AFFIRMATIONS) : pickOfTheDay(SLIP_LINES);
+  overlay.innerHTML = `
+    <div class="feedback-card">
+      <div class="feedback-emoji">${isClean? '✨' : '\u{1F4A5}'}</div>
+      <div class="feedback-title">${isClean? 'CLEAN DAY!' : 'SLIPPED'}</div>
+      <div class="feedback-line">${line}</div>
+    </div>`;
+  document.body.appendChild(overlay);
+  if(isClean && window.confetti){
+    confetti({particleCount:140, spread:90, origin:{y:0.5}, colors:['#e2601f','#c98a1f','#1f8a57','#ffb347']});
+  }
+  overlay.addEventListener('click', ()=>overlay.remove());
+  setTimeout(()=>overlay.remove(), 2800);
+}
 const CAREER_TASKS = [
  {key:"dsa", label:"DSA"},
  {key:"linkedin", label:"LinkedIn clean-up"},
@@ -680,6 +747,9 @@ function renderToday(){
       if(field==='ordered'){
         const row = document.getElementById('spentRow');
         if(row) row.hidden = !next;
+      }
+      if(field==='junkFree' && next!==null){
+        showJunkFeedback(next);
       }
     });
   });
