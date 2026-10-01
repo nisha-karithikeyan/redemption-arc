@@ -223,7 +223,15 @@ table.history tbody tr:last-child td{border-bottom:none;}
 }
 
 /* ---- AI Engineer roadmap: game map ---- */
-.aie-hud{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:linear-gradient(135deg,var(--surface),var(--surface2));border:1px solid var(--line);border-radius:16px;padding:16px 20px;box-shadow:var(--shadow);margin-bottom:18px;}
+.aie-layout{display:flex;flex-direction:column;gap:18px;}
+.aie-side{display:flex;flex-direction:column;gap:14px;}
+.aie-main{min-width:0;}
+@media (min-width:900px){
+  .aie-layout{flex-direction:row;align-items:flex-start;}
+  .aie-side{flex:0 0 300px;position:sticky;top:76px;}
+  .aie-main{flex:1;}
+}
+.aie-hud{display:flex;flex-direction:column;align-items:stretch;gap:14px;background:linear-gradient(135deg,var(--surface),var(--surface2));border:1px solid var(--line);border-radius:16px;padding:16px 20px;box-shadow:var(--shadow);}
 .aie-hud-level{display:flex;align-items:center;gap:12px;}
 .aie-level-badge{flex:none;width:52px;height:52px;border-radius:50%;background:linear-gradient(145deg,#4f8cff,#8a5cf6);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-weight:600;font-size:14px;box-shadow:0 4px 14px rgba(79,140,255,0.4);}
 .aie-map{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:22px 18px;max-width:640px;margin:0 auto;}
