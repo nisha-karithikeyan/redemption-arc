@@ -490,7 +490,8 @@ function renderToday(){
   const d = state.days[todayDate] || {};
   const sc = scoreForDay(d);
   const idx = dayIndexOf(new Date(todayDate+'T00:00:00'));
-  const relax = idx>=1 && idx<=TOTAL_DAYS ? relaxForIndex(idx) : RELAX[0];
+  const suggested = idx>=1 && idx<=TOTAL_DAYS ? relaxForIndex(idx) : RELAX[0];
+  const relax = RELAX.find(r=>r.name===d.relaxChoice) || suggested;
   const R=36, C=2*Math.PI*R;
   const scorePct = sc? sc.score/100 : 0;
 
@@ -553,9 +554,12 @@ function renderToday(){
     <div class="grid grid-2" style="margin-top:14px;">
       <div class="card">
         <div class="section-title" style="margin-top:0;">Today's relax activity</div>
-        <div class="relax-card today" style="text-align:left;flex-direction:row;align-items:center;gap:12px;">
-          <div class="relax-ico">${relax.ico}</div>
-          <div style="flex:1;"><div class="relax-name">${relax.name}</div><div class="relax-desc">${relax.desc}</div></div>
+        <label class="field"><span>Pick one${d.relaxChoice?'':' (suggested: '+suggested.name+')'}</span>
+          <select id="relaxPicker">${RELAX.map(r=>`<option value="${r.name}" ${r.name===relax.name?'selected':''}>${r.ico} ${r.name}</option>`).join('')}</select>
+        </label>
+        <div class="relax-card today" id="relaxCardToday" style="text-align:left;flex-direction:row;align-items:center;gap:12px;margin-top:10px;">
+          <div class="relax-ico" id="relaxCardIco">${relax.ico}</div>
+          <div style="flex:1;"><div class="relax-name" id="relaxCardDesc">${relax.desc}</div></div>
           <button class="toggle ${d.relaxDone?'active-yes':''}" data-field="relaxDone" data-val="true" style="flex:none;width:auto;padding:8px 14px;">${d.relaxDone?'Done ✓':'Mark done'}</button>
         </div>
       </div>
@@ -585,6 +589,15 @@ function renderToday(){
   wireTimeField('f-sleep');
   const moodInput = host.querySelector('#f-mood'), moodVal = host.querySelector('#moodVal');
   if(moodInput) moodInput.addEventListener('input', ()=>{ moodVal.textContent = MOOD_EMOJI[Number(moodInput.value)-1]; });
+
+  const relaxPicker = host.querySelector('#relaxPicker');
+  if(relaxPicker) relaxPicker.addEventListener('change', ()=>{
+    const chosen = RELAX.find(r=>r.name===relaxPicker.value);
+    state.days[todayDate] = {...(state.days[todayDate]||{}), relaxChoice: chosen.name};
+    writeDocQuiet({col:'days',id:todayDate}, {relaxChoice: chosen.name});
+    document.getElementById('relaxCardIco').textContent = chosen.ico;
+    document.getElementById('relaxCardDesc').textContent = chosen.desc;
+  });
 
   host.querySelector('#dateInput').addEventListener('change', e=>{ todayDate=e.target.value; renderToday(); });
   host.querySelectorAll('.toggle[data-field]').forEach(btn=>{
@@ -724,24 +737,36 @@ function renderHistory(){
 /* ======================= CAREER ======================= */
 function renderCareer(){
   const host=document.getElementById('view-career'); if(!host) return;
+  const nameRow = (wk, field, tag, defaultName, wdata, done)=>{
+    const nameField = field+'Name';
+    const value = wdata[nameField] || defaultName;
+    return `<div class="proj-row"><input type="checkbox" class="chk" data-wk="${wk}" data-field="${field}" ${done?'checked':''}>
+      <div style="flex:1;"><div class="proj-tag">${tag}</div>
+        <input type="text" class="proj-name-edit ${done?'done':''}" data-wk="${wk}" data-field="${nameField}" value="${value.replace(/"/g,'&quot;')}">
+      </div></div>`;
+  };
   const cards = WEEKS.map((w,i)=>{
     const wk=i+1; const wdata = state.career[String(wk)]||{};
     const startD = fmtShort(addDays(START,(wk-1)*7)), endD = fmtShort(addDays(START,Math.min(wk*7-1,TOTAL_DAYS-1)));
     const isCur = wk===CURRENT_WEEK;
     return `<div class="week-card ${isCur?'current':''}">
       <div class="week-head"><div><div class="week-num">Week ${wk}</div><div class="week-theme">${w.theme}</div></div><div class="week-dates">${startD} &ndash; ${endD}</div></div>
-      <div class="proj-row"><input type="checkbox" class="chk" data-wk="${wk}" data-field="production" ${wdata.production?'checked':''}><div><div class="proj-tag">production</div><div class="proj-name ${wdata.production?'done':''}">${w.production}</div></div></div>
-      <div class="proj-row"><input type="checkbox" class="chk" data-wk="${wk}" data-field="mini1" ${wdata.mini1?'checked':''}><div><div class="proj-tag">mini 1</div><div class="proj-name ${wdata.mini1?'done':''}">${w.mini1}</div></div></div>
-      <div class="proj-row"><input type="checkbox" class="chk" data-wk="${wk}" data-field="mini2" ${wdata.mini2?'checked':''}><div><div class="proj-tag">mini 2</div><div class="proj-name ${wdata.mini2?'done':''}">${w.mini2}</div></div></div>
+      ${nameRow(wk,'production','production',w.production,wdata,wdata.production)}
+      ${nameRow(wk,'mini1','mini 1',w.mini1,wdata,wdata.mini1)}
+      ${nameRow(wk,'mini2','mini 2',w.mini2,wdata,wdata.mini2)}
       <div class="posts-row">LinkedIn posts this week <input type="number" min="0" max="4" data-wk="${wk}" data-field="posts" value="${wdata.posts??0}"> / 4</div>
     </div>`;
   }).join('');
-  host.innerHTML = `<div class="section-title" style="margin-top:0;">12-week build curriculum + review week</div><div class="grid grid-3">${cards}</div>`;
+  host.innerHTML = `<div class="section-title" style="margin-top:0;">12-week build curriculum + review week <span class="faint" style="text-transform:none;font-weight:400;">— project names are editable, click in and type</span></div><div class="grid grid-3">${cards}</div>`;
   host.querySelectorAll('.chk').forEach(c=>c.addEventListener('change', ()=>{
     writeDoc({col:'career', id:c.dataset.wk}, {[c.dataset.field]: c.checked}).then(renderCareer);
   }));
   host.querySelectorAll('input[type=number][data-field=posts]').forEach(inp=>inp.addEventListener('change', ()=>{
     writeDoc({col:'career', id:inp.dataset.wk}, {posts: Number(inp.value)||0}).then(renderDashboard);
+  }));
+  host.querySelectorAll('.proj-name-edit').forEach(inp=>inp.addEventListener('blur', ()=>{
+    const val = inp.value.trim();
+    writeDoc({col:'career', id:inp.dataset.wk}, {[inp.dataset.field]: val || null});
   }));
 }
 
@@ -884,7 +909,7 @@ function exportExcel(){
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(days), 'Daily Log');
 
-  const career = WEEKS.map((w,i)=>{ const c=state.career[String(i+1)]||{}; return {Week:i+1, Theme:w.theme, Production:w.production, 'Prod Done':c.production?'Yes':'', 'Mini 1':w.mini1,'Mini1 Done':c.mini1?'Yes':'', 'Mini 2':w.mini2, 'Mini2 Done':c.mini2?'Yes':'', 'Posts (of 4)':c.posts||0}; });
+  const career = WEEKS.map((w,i)=>{ const c=state.career[String(i+1)]||{}; return {Week:i+1, Theme:w.theme, Production:c.productionName||w.production, 'Prod Done':c.production?'Yes':'', 'Mini 1':c.mini1Name||w.mini1,'Mini1 Done':c.mini1?'Yes':'', 'Mini 2':c.mini2Name||w.mini2, 'Mini2 Done':c.mini2?'Yes':'', 'Posts (of 4)':c.posts||0}; });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(career), 'Career');
 
   const skillsRows=[]; Object.entries(SKILLS).forEach(([g,items])=>items.forEach(it=>skillsRows.push({Group:g, Skill:it, Done: state.skills[slug(g+'_'+it)]?'Yes':''})));
