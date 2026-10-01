@@ -2,7 +2,7 @@ import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
-import { getFirestore, doc, setDoc, collection, onSnapshot }
+import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot }
   from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
 const CONFIG_IS_PLACEHOLDER = firebaseConfig.apiKey === "YOUR_API_KEY";
@@ -13,6 +13,43 @@ const TOTAL_DAYS = 91; // Oct(31)+Nov(30)+Dec(30)
 function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function fmtShort(d){return d.toLocaleDateString(undefined,{month:'short',day:'numeric'});}
+
+// Explicit AM/PM time picker (hour + minute + AM/PM selects) stored internally
+// as a 24h "HH:MM" string. A native <input type="time"> silently follows the
+// browser/OS locale for 12h vs 24h display, which is why AM/PM can vanish —
+// this control always shows it, on every device.
+function to24(h12, min, ampm){
+  let h = Number(h12)%12;
+  if(ampm==='PM') h += 12;
+  return String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
+}
+function from24(hhmm){
+  if(!hhmm) return {h12:'', min:'', ampm:'AM'};
+  const [h,m] = hhmm.split(':').map(Number);
+  const ampm = h>=12 ? 'PM' : 'AM';
+  let h12 = h%12; if(h12===0) h12=12;
+  return {h12:String(h12), min:String(m).padStart(2,'0'), ampm};
+}
+function timePicker(id, value){
+  const t = from24(value);
+  const hourOpts = Array.from({length:12},(_,i)=>i+1).map(h=>`<option value="${h}" ${t.h12==String(h)?'selected':''}>${h}</option>`).join('');
+  const minOpts = Array.from({length:60},(_,i)=>i).map(m=>{const mm=String(m).padStart(2,'0'); return `<option value="${mm}" ${t.min===mm?'selected':''}>${mm}</option>`;}).join('');
+  return `<div style="display:flex;gap:6px;" data-timepicker="${id}">
+    <select id="${id}-h" style="flex:1;"><option value="" ${t.h12===''?'selected':''} disabled>hr</option>${hourOpts}</select>
+    <select id="${id}-m" style="flex:1;"><option value="" ${t.min===''?'selected':''} disabled>min</option>${minOpts}</select>
+    <select id="${id}-ap" style="flex:1;"><option value="AM" ${t.ampm==='AM'?'selected':''}>AM</option><option value="PM" ${t.ampm==='PM'?'selected':''}>PM</option></select>
+  </div>`;
+}
+function fmtTime(hhmm){
+  if(!hhmm) return '--';
+  const t = from24(hhmm);
+  return `${t.h12}:${t.min} ${t.ampm}`;
+}
+function readTimePicker(id){
+  const h=document.getElementById(id+'-h'), m=document.getElementById(id+'-m'), ap=document.getElementById(id+'-ap');
+  if(!h || !m || h.value==='' || m.value==='') return null;
+  return to24(h.value, m.value, ap.value);
+}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 function dayIndexOf(date){return Math.floor((date-START)/864e5)+1;}
 function dateOfIndex(i){return addDays(START,i-1);}
@@ -87,6 +124,18 @@ async function writeDoc(path, data){
   }catch(e){
     console.error('write failed', e);
     toast('Could not save — check your connection');
+  }
+}
+
+async function clearDoc(path){
+  delete state[path.col][path.id];
+  renderActiveOnly();
+  try{
+    await deleteDoc(doc(db,'users',uid,path.col,path.id));
+    toast('Cleared');
+  }catch(e){
+    console.error('delete failed', e);
+    toast('Could not clear — check your connection');
   }
 }
 
@@ -351,7 +400,7 @@ function renderDashboard(){
 
     <div class="section-title">Today's non-negotiables</div>
     <div class="grid grid-4">
-      ${tileFor('Wake / Sleep', today && sc && sc.core.wake && sc.core.sleep, today? (today.wake||'--')+' → '+(today.sleep||'--'):'')}
+      ${tileFor('Wake / Sleep', today && sc && sc.core.wake && sc.core.sleep, today? fmtTime(today.wake)+' → '+fmtTime(today.sleep):'')}
       ${tileFor('Steps', today && sc && sc.core.steps, today?(Number(today.steps||0).toLocaleString()+' steps'):'')}
       ${tileFor('Water & Calories', today && sc && sc.core.water && sc.core.clean, today?((today.water||0)+'L · '+(today.calories||'?')+'cal'):'')}
       ${tileFor('Career Task', today && sc && sc.core.career, today && sc? 'Score '+sc.score+'/100':'')}
@@ -411,7 +460,8 @@ function renderToday(){
 
   host.innerHTML = `
     <div class="date-strip">
-      <label class="field" style="flex:none;"><span>Date</span><input type="date" id="dateInput" value="${todayDate}" min="${iso(START)}" max="${iso(addDays(START,TOTAL_DAYS-1))}"></label>
+      <label class="field" style="flex:none;"><span>Date</span><input type="date" id="dateInput" value="${todayDate}" min="${iso(addDays(START,-1))}" max="${iso(addDays(START,TOTAL_DAYS-1))}"></label>
+      ${iso(new Date(todayDate+'T00:00:00')) === iso(addDays(START,-1)) ? `<span class="faint" style="font-size:11.5px;">Sep 30 — your baseline day, logged before Day 1 officially starts</span>` : ''}
       <div style="flex:1"></div>
       <div style="display:flex;align-items:center;gap:12px;">
         <div class="score-ring">
@@ -430,8 +480,8 @@ function renderToday(){
       <div class="card">
         <div class="section-title" style="margin-top:0;">Non-negotiables</div>
         <div class="fields-grid">
-          <label class="field"><span>Wake time</span><input type="time" id="f-wake" value="${d.wake||''}"><span class="faint" style="font-size:10.5px;">the clock shows AM/PM for you, but goal is by 7:30am</span></label>
-          <label class="field"><span>Sleep time</span><input type="time" id="f-sleep" value="${d.sleep||''}"><span class="faint" style="font-size:10.5px;">pick the actual clock time — 1:00am counts as 2h late, not early</span></label>
+          <label class="field"><span>Wake time</span>${timePicker('f-wake', d.wake)}<span class="faint" style="font-size:10.5px;">goal: by 7:30 AM</span></label>
+          <label class="field"><span>Sleep time</span>${timePicker('f-sleep', d.sleep)}<span class="faint" style="font-size:10.5px;">1:00 AM counts as 2h past the 11:00 PM curfew, not early</span></label>
           <label class="field"><span>Steps</span><input type="number" id="f-steps" min="0" step="100" value="${d.steps??''}" placeholder="8000-10000"></label>
           <label class="field"><span>Water (L)</span><input type="number" id="f-water" min="0" max="5" step="0.1" value="${d.water??''}" placeholder="3"></label>
           <label class="field"><span>Calories</span><input type="number" id="f-calories" min="0" step="10" value="${d.calories??''}" placeholder="1200"></label>
@@ -483,7 +533,8 @@ function renderToday(){
       <label class="field"><span>Notes</span><textarea id="f-notes" placeholder="anything about today worth remembering">${d.notes||''}</textarea></label>
     </div>
 
-    <div style="margin-top:16px;display:flex;justify-content:flex-end;">
+    <div style="margin-top:16px;display:flex;justify-content:space-between;gap:10px;">
+      <button class="btn ghost" id="clearDay" ${Object.keys(d).length? '':'disabled'}>Clear this day's entry</button>
       <button class="btn" id="saveDay">Save today's log</button>
     </div>
   `;
@@ -504,6 +555,11 @@ function renderToday(){
   host.querySelector('#addResisted').addEventListener('click', ()=>addCraving(true));
   host.querySelector('#addSlipped').addEventListener('click', ()=>addCraving(false));
   host.querySelector('#saveDay').addEventListener('click', saveDayFromForm);
+  host.querySelector('#clearDay').addEventListener('click', ()=>{
+    if(confirm(`Clear everything logged for ${todayDate}? This can't be undone.`)){
+      clearDoc({col:'days', id:todayDate}).then(renderAll);
+    }
+  });
 }
 
 function addCraving(resisted){
@@ -529,7 +585,7 @@ function saveDayFromForm(){
   const g = id => document.getElementById(id);
   const val = id => g(id) ? g(id).value : undefined;
   const patch = {
-    wake: val('f-wake')||null, sleep: val('f-sleep')||null,
+    wake: readTimePicker('f-wake'), sleep: readTimePicker('f-sleep'),
     steps: val('f-steps')? Number(val('f-steps')):null,
     water: val('f-water')? Number(val('f-water')):null,
     calories: val('f-calories')? Number(val('f-calories')):null,
@@ -706,7 +762,7 @@ function exportExcel(){
   const wb = XLSX.utils.book_new();
   const days = allDaysSorted().map(d=>{
     const sc = scoreForDay(d);
-    return {Date:d.date, Wake:d.wake||'', Sleep:d.sleep||'', Steps:d.steps||'', 'Water(L)':d.water||'', Calories:d.calories||'',
+    return {Date:d.date, Wake:d.wake?fmtTime(d.wake):'', Sleep:d.sleep?fmtTime(d.sleep):'', Steps:d.steps||'', 'Water(L)':d.water||'', Calories:d.calories||'',
       'Junk-Free':d.junkFree===true?'Yes':d.junkFree===false?'No':'', 'Career Done':d.careerDone===true?'Yes':d.careerDone===false?'No':'',
       'Screen Time(h)':d.screenTime||'', 'Focus Hours':d.focusHours||'', 'Weight(kg)':d.weight||'', Mood:d.mood||'',
       'Relax Done':d.relaxDone?'Yes':'', 'Ordered Food':d.ordered?'Yes':'', 'Amount Spent':d.ordered?(d.amountSpent||0):0, Score: sc?sc.score:'', Notes:d.notes||''};
