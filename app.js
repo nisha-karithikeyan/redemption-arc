@@ -14,11 +14,11 @@ function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function fmtShort(d){return d.toLocaleDateString(undefined,{month:'short',day:'numeric'});}
 
-// Single-dropdown time picker, 5-minute steps, labeled in 12h with AM/PM
-// spelled out — stored internally as a 24h "HH:MM" string. A native
+// Typed 12h time field — stored internally as a 24h "HH:MM" string. A native
 // <input type="time"> silently follows the browser/OS locale for 12h vs 24h
-// display, which is why AM/PM can vanish; building the labels ourselves
-// means it always shows, on every device, in one easy scroll/type-to-jump list.
+// display, which is why AM/PM can vanish; a plain text field the user types
+// into (e.g. "9:06 AM") and that reformats itself on blur keeps AM/PM
+// explicit on every device while staying as fast as just typing it.
 function fmtTime(hhmm){
   if(!hhmm) return '--';
   const [h,m] = hhmm.split(':').map(Number);
@@ -26,24 +26,37 @@ function fmtTime(hhmm){
   let h12 = h%12; if(h12===0) h12=12;
   return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
 }
-function snapTo5(hhmm){
-  const [h,m] = hhmm.split(':').map(Number);
-  let total = Math.round((h*60+m)/5)*5 % 1440;
-  return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
+// Accepts "9:06 AM", "9.06am", "9 06 PM", "930am", "9am" — forgiving of
+// punctuation/spacing since this is typed on a phone under a 12h constraint.
+function parseTypedTime(str){
+  if(!str) return null;
+  const s = str.trim().toLowerCase().replace(/\s+/g,'');
+  const m = s.match(/^(\d{1,2})[:.]?(\d{2})?(am|pm)$/);
+  if(!m) return null;
+  let h = parseInt(m[1],10);
+  const min = m[2]!==undefined ? parseInt(m[2],10) : 0;
+  const ap = m[3];
+  if(h<1||h>12||min<0||min>59) return null;
+  h = h%12; if(ap==='pm') h+=12;
+  return String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
 }
 function timePicker(id, value){
-  const selectedVal = value ? snapTo5(value) : '';
-  let opts = `<option value="" ${!value?'selected':''} disabled>Select time</option>`;
-  for(let total=0; total<1440; total+=5){
-    const val = String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
-    opts += `<option value="${val}" ${selectedVal===val?'selected':''}>${fmtTime(val)}</option>`;
-  }
-  return `<select id="${id}">${opts}</select>`;
+  return `<input type="text" id="${id}" inputmode="numeric" autocomplete="off" placeholder="e.g. 9:06 AM" value="${value? fmtTime(value):''}" data-valid="${value?'1':'0'}">`;
 }
 function readTimePicker(id){
   const el = document.getElementById(id);
-  if(!el || el.value==='') return null;
-  return el.value;
+  if(!el || el.value.trim()==='') return null;
+  return parseTypedTime(el.value);
+}
+function wireTimeField(id){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.addEventListener('blur', ()=>{
+    if(el.value.trim()===''){ el.classList.remove('bad-input'); return; }
+    const parsed = parseTypedTime(el.value);
+    if(parsed){ el.value = fmtTime(parsed); el.classList.remove('bad-input'); }
+    else { el.classList.add('bad-input'); }
+  });
 }
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 function dayIndexOf(date){return Math.floor((date-START)/864e5)+1;}
@@ -97,6 +110,7 @@ const CORE_RULES = [
  {key:"career", label:"Career task done"},
 ];
 const MILESTONES = [30,60,90];
+const MOOD_EMOJI = ["\u{1F62B}","\u{1F615}","\u{1F610}","\u{1F642}","\u{1F60A}"]; // 1..5
 
 /* ======================= STATE ======================= */
 let app, auth, db, uid=null, currentUser=null;
@@ -522,7 +536,12 @@ function renderToday(){
           <label class="field"><span>Screen time (hrs)</span><input type="number" id="f-screen" min="0" step="0.5" value="${d.screenTime??''}"></label>
           <label class="field"><span>Focus hours (career)</span><input type="number" id="f-focus" min="0" step="0.5" value="${d.focusHours??''}"></label>
           <label class="field"><span>Weight (kg)</span><input type="number" id="f-weight" min="0" step="0.1" value="${d.weight??''}" placeholder="weekly is fine"></label>
-          <label class="field"><span>Mood (1-5)</span><input type="range" id="f-mood" min="1" max="5" value="${d.mood||3}"></label>
+          <label class="field"><span>Mood (1-5)</span>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <input type="range" id="f-mood" min="1" max="5" step="1" value="${d.mood||3}" style="flex:1;">
+              <span id="moodVal" class="mono" style="font-size:18px;min-width:28px;text-align:center;">${MOOD_EMOJI[(d.mood||3)-1]}</span>
+            </div>
+          </label>
         </div>
         <label class="field" style="margin-top:12px;"><span>Ordered Zepto / Zomato today?</span>
           <div class="toggle-row"><button class="toggle ${d.ordered===false? 'active-yes':''}" data-field="ordered" data-val="false">No</button><button class="toggle ${d.ordered? 'active-no':''}" data-field="ordered" data-val="true">Yes</button></div>
@@ -562,6 +581,10 @@ function renderToday(){
   `;
 
   renderCravingList(d.cravings||[]);
+  wireTimeField('f-wake');
+  wireTimeField('f-sleep');
+  const moodInput = host.querySelector('#f-mood'), moodVal = host.querySelector('#moodVal');
+  if(moodInput) moodInput.addEventListener('input', ()=>{ moodVal.textContent = MOOD_EMOJI[Number(moodInput.value)-1]; });
 
   host.querySelector('#dateInput').addEventListener('change', e=>{ todayDate=e.target.value; renderToday(); });
   host.querySelectorAll('.toggle[data-field]').forEach(btn=>{
