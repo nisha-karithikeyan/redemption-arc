@@ -160,6 +160,7 @@ function subscribeAll(){
 function renderActiveOnly(){
   if(activeTab==='dashboard') renderDashboard();
   if(activeTab==='today') renderToday();
+  if(activeTab==='history') renderHistory();
   if(activeTab==='career') renderCareer();
   if(activeTab==='finance') renderFinance();
 }
@@ -259,6 +260,7 @@ function computeNoOrderStreak(){
 const TABS = [
  {id:'dashboard', label:'Dashboard'},
  {id:'today', label:'Today'},
+ {id:'history', label:'History'},
  {id:'career', label:'Career'},
  {id:'skills', label:'Skills'},
  {id:'relax', label:'Relax'},
@@ -292,6 +294,7 @@ function renderAll(){
   host.innerHTML = `
     <section class="view" id="view-dashboard" ${activeTab!=='dashboard'?'hidden':''}></section>
     <section class="view" id="view-today" ${activeTab!=='today'?'hidden':''}></section>
+    <section class="view" id="view-history" ${activeTab!=='history'?'hidden':''}></section>
     <section class="view" id="view-career" ${activeTab!=='career'?'hidden':''}></section>
     <section class="view" id="view-skills" ${activeTab!=='skills'?'hidden':''}></section>
     <section class="view" id="view-relax" ${activeTab!=='relax'?'hidden':''}></section>
@@ -303,6 +306,7 @@ function renderAll(){
 
   if(activeTab==='dashboard') renderDashboard();
   if(activeTab==='today') renderToday();
+  if(activeTab==='history') renderHistory();
   if(activeTab==='career') renderCareer();
   if(activeTab==='skills') renderSkills();
   if(activeTab==='relax') renderRelax();
@@ -604,6 +608,57 @@ function saveDayFromForm(){
     }
     renderDashboard();
   });
+}
+
+/* ======================= HISTORY ======================= */
+function scorePillClass(score){
+  if(score>=85) return 'good';
+  if(score>=60) return 'warn';
+  return 'bad';
+}
+function renderHistory(){
+  const host=document.getElementById('view-history'); if(!host) return;
+  const days = allDaysSorted().slice().reverse(); // most recent first
+  if(!days.length){
+    host.innerHTML = `<div class="card faint" style="text-align:center;padding:40px;">Nothing logged yet — go fill in the Today tab and it'll show up here.</div>`;
+    return;
+  }
+  const rows = days.map(d=>{
+    const sc = scoreForDay(d);
+    const dow = new Date(d.date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short'});
+    return `<tr>
+      <td>${fmtShort(new Date(d.date+'T00:00:00'))} <span class="faint">${dow}</span></td>
+      <td>${sc? `<span class="score-pill ${scorePillClass(sc.score)}">${sc.score}</span>` : '--'}</td>
+      <td>${fmtTime(d.wake)}</td>
+      <td>${fmtTime(d.sleep)}</td>
+      <td>${d.steps!=null? Number(d.steps).toLocaleString() : '--'}</td>
+      <td>${d.water!=null? d.water+'L' : '--'}</td>
+      <td>${d.calories!=null? d.calories : '--'}</td>
+      <td>${d.junkFree===true?'✅':d.junkFree===false?'❌':'--'}</td>
+      <td>${d.careerDone===true?'✅':d.careerDone===false?'❌':'--'}</td>
+      <td>${d.weight!=null? d.weight+'kg' : '--'}</td>
+      <td>${d.ordered? '₹'+(d.amountSpent||0) : (d.ordered===false? '—' : '--')}</td>
+      <td>${sc && sc.flags.length? `<span style="color:var(--bad);">${sc.flags.length} ⚠</span>` : (d.date in state.days? '✅':'--')}</td>
+      <td><button class="edit-link" data-date="${d.date}">Edit</button></td>
+    </tr>`;
+  }).join('');
+  host.innerHTML = `
+    <div class="section-title" style="margin-top:0;">Every day you've logged — ${days.length} of ${TOTAL_DAYS}</div>
+    <div class="table-wrap">
+      <table class="history">
+        <thead><tr>
+          <th>Date</th><th>Score</th><th>Wake</th><th>Sleep</th><th>Steps</th><th>Water</th><th>Cal</th><th>Clean</th><th>Career</th><th>Weight</th><th>Spent</th><th>Flags</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+  host.querySelectorAll('.edit-link').forEach(btn=>btn.addEventListener('click', ()=>{
+    todayDate = btn.dataset.date;
+    activeTab = 'today';
+    renderAll();
+    window.scrollTo({top:0,behavior:'smooth'});
+  }));
 }
 
 /* ======================= CAREER ======================= */
