@@ -117,25 +117,68 @@ function renderActiveOnly(){
 }
 
 /* ======================= SCORING ======================= */
+// Minutes after NOON, wrapping forward through midnight — so 23:00 -> 660,
+// 00:00 -> 720, 01:00 -> 780. This makes "later" always a BIGGER number even
+// across midnight, which a plain string/time compare gets backwards (a plain
+// compare scores 1:00am as "earlier" than 11:00pm, which is wrong).
+function minutesAfterNoon(hhmm){
+  const [h,m] = hhmm.split(':').map(Number);
+  let rel = (h*60+m) - 12*60;
+  if(rel < 0) rel += 1440;
+  return rel;
+}
+function fmtMinutes(mins){
+  const h = Math.floor(mins/60), m = mins%60;
+  return (h>0? h+'h ':'') + (m>0||h===0? m+'m':'');
+}
+const SLEEP_TARGET = minutesAfterNoon("23:00"); // 660
+const WAKE_TARGET = 7*60+30; // minutes after midnight
+
 function scoreForDay(d){
   if(!d) return null;
   let score=0;
+  const flags=[];
   const core = {
-    wake: d.wake && d.wake <= "07:30",
-    sleep: d.sleep && d.sleep<="23:00",
+    wake: !!(d.wake && (d.wake.split(':').map(Number).reduce((h,m,i)=>i===0?h*60+m:h+m,0)) <= WAKE_TARGET),
+    sleep: !!(d.sleep && minutesAfterNoon(d.sleep) <= SLEEP_TARGET),
     steps: Number(d.steps||0) >= 8000,
     water: Number(d.water||0) >= 3,
     clean: d.junkFree === true && Number(d.calories||9999) <= 1200,
     career: d.careerDone === true,
   };
   CORE_RULES.forEach(r=>{ if(core[r.key]) score+=10; });
+
+  if(d.wake && !core.wake){
+    const wakeMins = d.wake.split(':').map(Number).reduce((h,m,i)=>i===0?h*60+m:h+m,0);
+    flags.push(`Woke up ${fmtMinutes(wakeMins-WAKE_TARGET)} past 7:30am`);
+  }
+  if(d.sleep && !core.sleep){
+    flags.push(`Slept ${fmtMinutes(minutesAfterNoon(d.sleep)-SLEEP_TARGET)} past the 11:00pm curfew`);
+  }
+  if(!core.steps && d.steps!=null){
+    flags.push(`${(8000-Number(d.steps)).toLocaleString()} steps short of 8,000`);
+  }
+  if(!core.water && d.water!=null){
+    flags.push(`${(3-Number(d.water)).toFixed(1)}L short of your 3L water goal`);
+  }
+  if(d.junkFree===false){
+    flags.push(`Ate junk / sodium-heavy food`);
+  }
+  if(Number(d.calories||0) > 1200){
+    flags.push(`${(Number(d.calories)-1200).toLocaleString()} cal over your 1200 budget`);
+  }
+  if(!core.career && d.careerDone===false){
+    flags.push(`No career task done`);
+  }
+
   let bonus=0;
   if(Number(d.screenTime||99) <= 3) bonus+=10;
   if(d.relaxDone) bonus+=10;
   if(d.mood) bonus+=10;
   if(!d.cravings || d.cravings.every(c=>c.resisted)) bonus+=10;
+  else flags.push(`Craving slipped: ${d.cravings.filter(c=>!c.resisted).map(c=>c.trigger).join(', ')}`);
   score+=bonus;
-  return {score, core, bonus};
+  return {score, core, bonus, flags};
 }
 
 function computeStreak(){
@@ -291,11 +334,19 @@ function renderDashboard(){
 
     <div class="section-title">Today's non-negotiables</div>
     <div class="grid grid-4">
-      ${tileFor('Wake / Sleep', today && today.wake<='07:30' && today.sleep && today.sleep<='23:00', today? (today.wake||'--')+' → '+(today.sleep||'--'):'')}
-      ${tileFor('Steps', today && Number(today.steps||0)>=8000, today?(Number(today.steps||0).toLocaleString()+' steps'):'')}
-      ${tileFor('Water & Calories', today && Number(today.water||0)>=3 && today.junkFree && Number(today.calories||9999)<=1200, today?((today.water||0)+'L · '+(today.calories||'?')+'cal'):'')}
-      ${tileFor('Career Task', today && today.careerDone, today && sc? 'Score '+sc.score+'/100':'')}
+      ${tileFor('Wake / Sleep', today && sc && sc.core.wake && sc.core.sleep, today? (today.wake||'--')+' → '+(today.sleep||'--'):'')}
+      ${tileFor('Steps', today && sc && sc.core.steps, today?(Number(today.steps||0).toLocaleString()+' steps'):'')}
+      ${tileFor('Water & Calories', today && sc && sc.core.water && sc.core.clean, today?((today.water||0)+'L · '+(today.calories||'?')+'cal'):'')}
+      ${tileFor('Career Task', today && sc && sc.core.career, today && sc? 'Score '+sc.score+'/100':'')}
     </div>
+
+    ${sc && sc.flags.length ? `
+    <div class="section-title">Red flags today</div>
+    <div class="card" style="border-color:var(--bad);">
+      ${sc.flags.map(f=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;font-size:13.5px;color:var(--bad);"><span>&#9888;</span><span>${f}</span></div>`).join('')}
+    </div>` : (today ? `
+    <div class="section-title">Red flags today</div>
+    <div class="card" style="border-color:var(--good);color:var(--good);font-size:13.5px;">&#10003; Clean day — no red flags logged.</div>` : '')}
 
     <div class="section-title">Career output (Oct &ndash; Dec)</div>
     <div class="card">
@@ -354,12 +405,16 @@ function renderToday(){
       </div>
     </div>
 
+    ${sc && sc.flags.length ? `<div class="card" style="border-color:var(--bad);margin-bottom:14px;">
+      ${sc.flags.map(f=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;font-size:13px;color:var(--bad);"><span>&#9888;</span><span>${f}</span></div>`).join('')}
+    </div>` : ''}
+
     <div class="grid grid-2">
       <div class="card">
         <div class="section-title" style="margin-top:0;">Non-negotiables</div>
         <div class="fields-grid">
-          <label class="field"><span>Wake time</span><input type="time" id="f-wake" value="${d.wake||''}"></label>
-          <label class="field"><span>Sleep time</span><input type="time" id="f-sleep" value="${d.sleep||''}"></label>
+          <label class="field"><span>Wake time</span><input type="time" id="f-wake" value="${d.wake||''}"><span class="faint" style="font-size:10.5px;">the clock shows AM/PM for you, but goal is by 7:30am</span></label>
+          <label class="field"><span>Sleep time</span><input type="time" id="f-sleep" value="${d.sleep||''}"><span class="faint" style="font-size:10.5px;">pick the actual clock time — 1:00am counts as 2h late, not early</span></label>
           <label class="field"><span>Steps</span><input type="number" id="f-steps" min="0" step="100" value="${d.steps??''}" placeholder="8000-10000"></label>
           <label class="field"><span>Water (L)</span><input type="number" id="f-water" min="0" max="5" step="0.1" value="${d.water??''}" placeholder="3"></label>
           <label class="field"><span>Calories</span><input type="number" id="f-calories" min="0" step="10" value="${d.calories??''}" placeholder="1200"></label>
@@ -467,7 +522,7 @@ function saveDayFromForm(){
   };
   writeDoc({col:'days',id:todayDate}, patch).then(()=>{
     const sc = scoreForDay(state.days[todayDate]);
-    toast(sc? `Saved — score ${sc.score}/100` : 'Saved');
+    toast(sc? `Saved — score ${sc.score}/100${sc.flags.length? ' — '+sc.flags.length+' red flag'+(sc.flags.length>1?'s':''):''}` : 'Saved');
     if(sc && sc.score>=90 && window.confetti){
       confetti({particleCount:110, spread:75, origin:{y:0.6}, colors:['#e2601f','#c98a1f','#1f8a57']});
     }
