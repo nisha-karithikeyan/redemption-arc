@@ -1109,7 +1109,6 @@ function aieStatus(index){
   if(prevDone) return 'current';
   return 'locked';
 }
-const AIE_ALIGN = ['flex-start','center','flex-end'];
 function renderAIE(){
   const host=document.getElementById('view-aie'); if(!host) return;
   const xp = aieXP();
@@ -1126,12 +1125,16 @@ function renderAIE(){
     const inMonth = AIE_NODES.map((n,i)=>({n,i})).filter(x=>x.n.month===m);
     const rows = inMonth.map(({n,i})=>{
       const status = aieStatus(i);
-      const align = AIE_ALIGN[i%3];
-      return `<div style="display:flex;justify-content:${align};">
-        <button class="aie-node ${status}" data-idx="${i}" style="${align==='center'?'':''}">
+      const flip = i%2===1;
+      return `<div class="aie-row ${flip?'flip':''} ${status}" data-idx="${i}">
+        <button class="aie-node ${status}" tabindex="-1">
           <span class="aie-node-icon">${status==='locked'?'\u{1F512}':n.icon}</span>
           <span class="aie-node-num">${i+1}</span>
         </button>
+        <div class="aie-node-info">
+          <div class="aie-node-title">${n.title}</div>
+          <div class="aie-node-xp">${n.xp} XP ${status==='done'?'· cleared ✓':status==='locked'?'· locked':'· up next'}</div>
+        </div>
       </div>`;
     }).join('<div class="aie-connector"></div>');
     return `<div class="aie-month"><div class="aie-month-label">Month ${m}</div>${rows}</div>`;
@@ -1154,9 +1157,9 @@ function renderAIE(){
     <div id="aieDetail"></div>
   `;
 
-  host.querySelectorAll('.aie-node').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const idx = Number(btn.dataset.idx);
+  host.querySelectorAll('.aie-row').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      const idx = Number(row.dataset.idx);
       if(aieStatus(idx)==='locked'){ toast('Clear the previous node first'); return; }
       aieSelected = AIE_NODES[idx].id;
       renderAieDetail();
