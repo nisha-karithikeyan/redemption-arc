@@ -185,3 +185,17 @@ textarea{resize:vertical;min-height:60px;}
 .google-btn{display:inline-flex;align-items:center;gap:10px;padding:11px 20px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--text);font-weight:600;font-size:14px;cursor:pointer;box-shadow:var(--shadow);}
 .google-btn:hover{background:var(--surface2);}
 .config-warn{background:var(--bad-bg);color:var(--bad);border:1px solid var(--bad);border-radius:10px;padding:12px 16px;font-size:13px;text-align:left;margin-top:18px;}
+
+/* ---- history table ---- */
+.table-wrap{overflow-x:auto;border-radius:14px;border:1px solid var(--line);background:var(--surface);box-shadow:var(--shadow);}
+table.history{width:100%;border-collapse:collapse;font-size:12.5px;font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;}
+table.history th,table.history td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap;}
+table.history thead th{color:var(--text-faint);text-transform:uppercase;font-size:10px;letter-spacing:.05em;font-family:'IBM Plex Sans',sans-serif;font-weight:600;}
+table.history tbody tr:hover{background:var(--surface2);}
+table.history tbody tr:last-child td{border-bottom:none;}
+.score-pill{display:inline-block;padding:2px 9px;border-radius:999px;font-weight:600;font-size:11px;}
+.score-pill.good{background:var(--good-bg);color:var(--good);}
+.score-pill.warn{background:var(--warn-bg);color:var(--warn);}
+.score-pill.bad{background:var(--bad-bg);color:var(--bad);}
+.edit-link{background:none;border:1px solid var(--line);border-radius:7px;padding:4px 10px;font-size:11.5px;color:var(--text-dim);cursor:pointer;font-family:'IBM Plex Sans',sans-serif;}
+.edit-link:hover{background:var(--surface2);color:var(--text);}
