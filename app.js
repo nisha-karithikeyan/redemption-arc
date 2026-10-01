@@ -396,7 +396,7 @@ function renderDashboard(){
   const weights = days.filter(d=>d.weight).map(d=>Number(d.weight));
   const startW = weights[0], curW = weights[weights.length-1];
   const wDelta = (startW!=null && curW!=null) ? (curW-startW) : null;
-  const totalSpent = days.reduce((s,d)=>s+(d.ordered? Number(d.amountSpent||0):0),0);
+  const totalSpent = days.reduce((s,d)=>s+(d.ordered? Number(d.amountSpent||0):0)+Number(d.otherSpend||0),0);
   const orderCount = days.filter(d=>d.ordered).length;
   const noOrderStreak = computeNoOrderStreak();
   const careerVals = Object.values(state.career||{});
@@ -428,7 +428,7 @@ function renderDashboard(){
         <p>Week ${CURRENT_WEEK} of 13 &middot; ${fmtShort(TODAY)} &middot; ${TOTAL_DAYS-TODAY_IDX} days left until Dec 30</p>
         <span class="streak-chip">\u{1F525} <span class="flame"></span> ${streak}-day streak (score 70+)</span>
         <span class="countdown-chip">Weight ${wDelta!=null ? (wDelta<=0?('↓ '+Math.abs(wDelta).toFixed(1)+'kg'):('↑ '+wDelta.toFixed(1)+'kg')) : 'log weight to start'}</span>
-        <span class="countdown-chip">₹${totalSpent.toLocaleString()} spent on ${orderCount} order${orderCount===1?'':'s'}</span>
+        <span class="countdown-chip">₹${totalSpent.toLocaleString()} spent total (${orderCount} order${orderCount===1?'':'s'})</span>
         <span class="countdown-chip">\u{1F6AB} ${noOrderStreak}-day no-order streak</span>
         <div style="margin-top:10px;"><button class="btn secondary" id="exportBtn">⬇ Export full data to Excel</button></div>
       </div>
@@ -548,6 +548,10 @@ function renderToday(){
           <div class="toggle-row"><button class="toggle ${d.ordered===false? 'active-yes':''}" data-field="ordered" data-val="false">No</button><button class="toggle ${d.ordered? 'active-no':''}" data-field="ordered" data-val="true">Yes</button></div>
         </label>
         <label class="field" id="spentRow" style="margin-top:10px;" ${d.ordered? '':'hidden'}><span>₹ Spent on that order</span><input type="number" id="f-spent" min="0" step="10" value="${d.amountSpent??''}" placeholder="0"></label>
+        <div class="fields-grid" style="margin-top:12px;">
+          <label class="field"><span>₹ Other spend today (food, shopping, anything on yourself)</span><input type="number" id="f-otherspend" min="0" step="10" value="${d.otherSpend??''}" placeholder="0"></label>
+          <label class="field"><span>What was it for?</span><input type="text" id="f-othernote" value="${d.otherSpendNote||''}" placeholder="e.g. coffee, clothes, movie"></label>
+        </div>
       </div>
     </div>
 
@@ -671,6 +675,8 @@ function saveDayFromForm(){
     weight: val('f-weight')!=='' ? Number(val('f-weight')):null,
     mood: val('f-mood')? Number(val('f-mood')):null,
     amountSpent: val('f-spent')!=='' && val('f-spent')!==undefined ? Number(val('f-spent')):0,
+    otherSpend: val('f-otherspend')!=='' ? Number(val('f-otherspend')):0,
+    otherSpendNote: val('f-othernote')||'',
     notes: val('f-notes')||'',
   };
   writeDoc({col:'days',id:todayDate}, patch).then(()=>{
@@ -806,39 +812,84 @@ function renderRelax(){
 }
 
 /* ======================= FINANCE ======================= */
+function spendCumulativeChart(days){
+  const sorted = days.filter(d=>d.ordered || Number(d.otherSpend||0)>0);
+  if(sorted.length<2) return `<div class="faint" style="font-size:13px;">Log a couple of spend days to see the running total climb here.</div>`;
+  let running=0;
+  const pts = sorted.map(d=>{ running += (d.ordered?Number(d.amountSpent||0):0) + Number(d.otherSpend||0); return running; });
+  const max = Math.max(...pts);
+  const W=600,H=70,pad=6;
+  const x = i => pad + i*(W-2*pad)/(pts.length-1);
+  const y = v => H-pad - (max===0?0:(v/max))*(H-2*pad);
+  const path = pts.map((v,i)=>`${i===0?'M':'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const area = path + ` L${x(pts.length-1).toFixed(1)},${H-pad} L${x(0).toFixed(1)},${H-pad} Z`;
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:70px;">
+    <path d="${area}" fill="var(--bad)" opacity="0.12"/>
+    <path d="${path}" fill="none" stroke="var(--bad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${x(pts.length-1)}" cy="${y(pts[pts.length-1])}" r="4" fill="var(--bad)"/>
+  </svg>
+  <div class="bar-row" style="margin-top:4px;"><span>Day 1 of tracking</span><span>₹${pts[pts.length-1].toLocaleString()} spent total</span></div>`;
+}
+
 function renderFinance(){
   const host=document.getElementById('view-finance'); if(!host) return;
   const days = allDaysSorted();
-  const total = days.reduce((s,d)=>s+(d.ordered? Number(d.amountSpent||0):0),0);
+  const ordersTotal = days.reduce((s,d)=>s+(d.ordered? Number(d.amountSpent||0):0),0);
+  const otherTotal = days.reduce((s,d)=>s+Number(d.otherSpend||0),0);
+  const combinedTotal = ordersTotal + otherTotal;
   const orderCount = days.filter(d=>d.ordered).length;
   const noOrderStreak = computeNoOrderStreak();
   const cap = state.profile.spendCap || 3000;
   const weekly = Array.from({length:13},(_,w)=>{
     const from=addDays(START,w*7), to=addDays(START,Math.min(w*7+6,TOTAL_DAYS-1));
-    const sum = days.filter(d=>{const dd=new Date(d.date+'T00:00:00'); return dd>=from && dd<=to && d.ordered;}).reduce((s,d)=>s+Number(d.amountSpent||0),0);
-    return {w:w+1, sum};
+    const inWeek = days.filter(d=>{const dd=new Date(d.date+'T00:00:00'); return dd>=from && dd<=to;});
+    const orders = inWeek.filter(d=>d.ordered).reduce((s,d)=>s+Number(d.amountSpent||0),0);
+    const other = inWeek.reduce((s,d)=>s+Number(d.otherSpend||0),0);
+    return {w:w+1, orders, other, total:orders+other};
   });
-  const maxSum = Math.max(1,...weekly.map(w=>w.sum));
+  const maxSum = Math.max(1,...weekly.map(w=>w.total));
   const thisWeekIdx = CURRENT_WEEK-1;
-  const thisWeekSpend = weekly[thisWeekIdx] ? weekly[thisWeekIdx].sum : 0;
+  const thisWeek = weekly[thisWeekIdx] || {total:0};
+  const topSpendDays = days.filter(d=>d.ordered || Number(d.otherSpend||0)>0)
+    .map(d=>({date:d.date, amt:(d.ordered?Number(d.amountSpent||0):0)+Number(d.otherSpend||0), note: d.otherSpendNote||(d.ordered?'Zepto/Zomato':'')}))
+    .sort((a,b)=>b.amt-a.amt).slice(0,5);
   host.innerHTML = `
     <div class="hero" style="grid-template-columns:1fr;text-align:left;">
       <div>
-        <div class="stat"><div class="num" id="moneyNum">0</div><div class="lbl">Total spent on Zepto / Zomato so far (${orderCount} order${orderCount===1?'':'s'})</div></div>
-        <div style="margin-top:12px;"><div class="bar-row"><span>This week's spend vs. your weekly cap</span><span>₹${thisWeekSpend.toLocaleString()} / ${cap.toLocaleString()}</span></div><div class="bar"><div style="width:${Math.min(100,thisWeekSpend/cap*100)}%;background:${thisWeekSpend>cap?'linear-gradient(90deg,var(--bad),#ff8a8a)':'linear-gradient(90deg,var(--accent),var(--accent2))'}"></div></div></div>
-        <label class="field" style="margin-top:14px;max-width:220px;"><span>Weekly spend cap (₹)</span><input type="number" id="goalInput" min="0" step="100" value="${cap}"></label>
+        <div class="stat"><div class="num" id="moneyNum">0</div><div class="lbl">Total spent so far — orders + everything else (${orderCount} order${orderCount===1?'':'s'})</div></div>
+        <div style="margin-top:12px;"><div class="bar-row"><span>This week's spend vs. your weekly cap</span><span>₹${thisWeek.total.toLocaleString()} / ${cap.toLocaleString()}</span></div><div class="bar"><div style="width:${Math.min(100,thisWeek.total/cap*100)}%;background:${thisWeek.total>cap?'linear-gradient(90deg,var(--bad),#ff8a8a)':'linear-gradient(90deg,var(--accent),var(--accent2))'}"></div></div></div>
+        <label class="field" style="margin-top:14px;max-width:220px;"><span>Weekly spend cap (₹, all spending)</span><input type="number" id="goalInput" min="0" step="100" value="${cap}"></label>
         <div class="streak-chip" style="margin-top:14px;">\u{1F6AB} ${noOrderStreak}-day streak without ordering</div>
       </div>
     </div>
-    <div class="section-title">Weekly spend</div>
+
+    <div class="section-title">Weekly spend — orders vs. everything else</div>
     <div class="card">
       <div style="display:flex;align-items:flex-end;gap:6px;height:120px;">
-        ${weekly.map(w=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;background:${w.sum>cap?'linear-gradient(180deg,#ff8a8a,var(--bad))':'linear-gradient(180deg,var(--accent2),var(--accent))'};border-radius:4px 4px 0 0;height:${Math.max(2,w.sum/maxSum*90)}px;"></div><div class="faint" style="font-size:10px;">W${w.w}</div></div>`).join('')}
+        ${weekly.map(w=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <div style="width:100%;display:flex;flex-direction:column-reverse;height:90px;">
+            <div style="width:100%;background:var(--bad);border-radius:${w.other>0?'0':'4px 4px'} 0 0;height:${maxSum?Math.max(w.orders>0?2:0,w.orders/maxSum*90):0}px;"></div>
+            <div style="width:100%;background:var(--accent2);border-radius:4px 4px 0 0;height:${maxSum?Math.max(w.other>0?2:0,w.other/maxSum*90):0}px;"></div>
+          </div>
+          <div class="faint" style="font-size:10px;">W${w.w}</div>
+        </div>`).join('')}
       </div>
-      <div class="faint" style="font-size:11px;margin-top:8px;">Lower is better here — red bars are weeks you went over your cap.</div>
+      <div style="display:flex;gap:16px;margin-top:10px;font-size:11.5px;" class="muted">
+        <span><span style="display:inline-block;width:9px;height:9px;background:var(--bad);border-radius:2px;margin-right:5px;"></span>Zepto/Zomato orders (₹${ordersTotal.toLocaleString()})</span>
+        <span><span style="display:inline-block;width:9px;height:9px;background:var(--accent2);border-radius:2px;margin-right:5px;"></span>Other spend (₹${otherTotal.toLocaleString()})</span>
+      </div>
     </div>
+
+    <div class="section-title">Running total over time</div>
+    <div class="card">${spendCumulativeChart(days)}</div>
+
+    ${topSpendDays.length? `
+    <div class="section-title">Your 5 biggest spend days</div>
+    <div class="card">
+      ${topSpendDays.map(t=>`<div class="bar-row" style="margin-bottom:0;padding:6px 0;border-top:1px solid var(--line);"><span>${fmtShort(new Date(t.date+'T00:00:00'))} ${t.note?'— '+t.note:''}</span><span class="num">₹${t.amt.toLocaleString()}</span></div>`).join('')}
+    </div>` : ''}
   `;
-  animateNumber(document.getElementById('moneyNum'), total);
+  animateNumber(document.getElementById('moneyNum'), combinedTotal);
   document.getElementById('goalInput').addEventListener('change', e=>{
     writeDoc({col:'profile', id:'main'}, {spendCap: Number(e.target.value)||0}).then(renderFinance);
   });
@@ -905,7 +956,7 @@ function exportExcel(){
     return {Date:d.date, Wake:d.wake?fmtTime(d.wake):'', Sleep:d.sleep?fmtTime(d.sleep):'', Steps:d.steps||'', 'Water(L)':d.water||'', Calories:d.calories||'',
       'Junk-Free':d.junkFree===true?'Yes':d.junkFree===false?'No':'', 'Career Done':d.careerDone===true?'Yes':d.careerDone===false?'No':'',
       'Screen Time(h)':d.screenTime||'', 'Focus Hours':d.focusHours||'', 'Weight(kg)':d.weight||'', Mood:d.mood||'',
-      'Relax Done':d.relaxDone?'Yes':'', 'Ordered Food':d.ordered?'Yes':'', 'Amount Spent':d.ordered?(d.amountSpent||0):0, Score: sc?sc.score:'', Notes:d.notes||''};
+      'Relax Done':d.relaxDone?'Yes':'', 'Ordered Food':d.ordered?'Yes':'', 'Order Amount':d.ordered?(d.amountSpent||0):0, 'Other Spend':d.otherSpend||0, 'Other Spend For':d.otherSpendNote||'', Score: sc?sc.score:'', Notes:d.notes||''};
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(days), 'Daily Log');
 
