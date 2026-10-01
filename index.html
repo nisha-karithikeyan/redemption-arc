@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Redemption Arc</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 24 24"><path d="M12 2c2 3-1 4-1 7a3 3 0 1 0 6 0c0-1-.4-1.8-1-2.5 2.3 1.3 4 4 4 7.2C20 18.6 16.4 22 12 22S4 18.6 4 13.7c0-3 1.4-5.4 3.4-7C6.8 8 6.5 9.4 7 11c.6-3 2-5.3 5-9Z" fill="var(--accent)"/></svg>
+      <div class="brand-name">Redemption Arc</div>
+      <div class="brand-tag" id="headerTag">Oct &middot; Nov &middot; Dec</div>
+      <div class="account" id="accountBox" hidden></div>
+    </div>
+    <div class="tabs" id="tabs" role="tablist" hidden></div>
+  </div>
+</div>
+
+<div class="app">
+  <div id="gate"></div>
+  <div id="offlineBanner"></div>
+  <div id="views"></div>
+  <div class="footer-note" id="footerNote" hidden>The Redemption Arc &middot; 91 days &middot; Oct 1 &ndash; Dec 30, 2026 &middot; your data is stored in your own Firebase project, under your Google account</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.9.3/confetti.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
