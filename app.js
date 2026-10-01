@@ -147,27 +147,42 @@ const CLEAN_AFFIRMATIONS = [
   "This is what showing up actually looks like.",
   "You just made tomorrow's you a little stronger.",
 ];
-// Shown on a slip-up day. Real, not harsh — the point is a reset, not shame.
-const SLIP_LINES = [
-  "Slipped today. The streak breaks, the arc doesn't.",
-  "One bad rep. The 91 days aren't over.",
-  "Noted. Reset tomorrow, not next Monday.",
-  "That one's logged. Let it end there.",
-  "Not a failure — data. Adjust and move.",
-  "Everyone misses reps. Winners log them and continue.",
-  "This is exactly why tomorrow matters more.",
-  "Craving won this round. The arc is still rising.",
-  "Log it, learn from it, let it go.",
-  "You're still 90-something days from done. Keep walking.",
-];
 function pickOfTheDay(list){ return list[(TODAY_IDX-1) % list.length]; }
+
+// Blunt, number-driven consequence statement — no insults, no soft "it's just
+// data" framing. Computed from the user's own logged slip rate so it's a real
+// projection, not a canned line. Assumes ~600 kcal surplus on an unlogged
+// slip day (noted in the message) and 7700 kcal ≈ 1kg of fat.
+function computeJunkStats(){
+  const days = Object.values(state.days);
+  const logged = days.filter(d=>d.junkFree===true || d.junkFree===false);
+  const slipDays = logged.filter(d=>d.junkFree===false);
+  const ASSUMED_EXCESS = 600;
+  const excessList = slipDays.map(d=> d.calories!=null ? Math.max(0, Number(d.calories)-1200) : ASSUMED_EXCESS);
+  const avgExcess = excessList.length ? excessList.reduce((a,b)=>a+b,0)/excessList.length : ASSUMED_EXCESS;
+  const slipRate = logged.length ? slipDays.length/logged.length : 0;
+  const daysRemaining = TOTAL_DAYS - TODAY_IDX;
+  const projectedExtraKg = (slipRate * daysRemaining * avgExcess) / 7700;
+  return {slipCount: slipDays.length, totalLogged: logged.length, slipRate, avgExcess, daysRemaining, projectedExtraKg};
+}
+function buildSlipMessage(){
+  const s = computeJunkStats();
+  const pct = s.totalLogged ? Math.round(s.slipRate*100) : 0;
+  if(s.totalLogged < 4){
+    return `Slip #${s.slipCount} logged. Not enough data yet for a real projection — give it a week and the math will show you exactly where this goes.`;
+  }
+  if(s.projectedExtraKg < 0.3){
+    return `${pct}% of your logged days are slips. Still a low rate — keep it there, because the moment it climbs, the projection below turns against you fast.`;
+  }
+  return `You're slipping on ${pct}% of logged days, averaging ~${Math.round(s.avgExcess)} extra kcal each. Hold that rate for the remaining ${s.daysRemaining} days and you gain roughly ${s.projectedExtraKg.toFixed(1)}kg — not lose it. That's arithmetic, not an opinion: ${Math.round(s.slipRate*s.daysRemaining)} more slips at this rate ends with you heavier than you started this arc.`;
+}
 function showJunkFeedback(isClean){
   const overlay = document.createElement('div');
   overlay.className = 'feedback-overlay ' + (isClean? 'celebrate' : 'fail');
-  const line = isClean ? pickOfTheDay(CLEAN_AFFIRMATIONS) : pickOfTheDay(SLIP_LINES);
+  const line = isClean ? pickOfTheDay(CLEAN_AFFIRMATIONS) : buildSlipMessage();
   overlay.innerHTML = `
     <div class="feedback-card">
-      <div class="feedback-emoji">${isClean? '✨' : '\u{1F4A5}'}</div>
+      <div class="feedback-emoji">${isClean? '✨' : '\u{1F4C9}'}</div>
       <div class="feedback-title">${isClean? 'CLEAN DAY!' : 'SLIPPED'}</div>
       <div class="feedback-line">${line}</div>
     </div>`;
@@ -176,7 +191,7 @@ function showJunkFeedback(isClean){
     confetti({particleCount:140, spread:90, origin:{y:0.5}, colors:['#e2601f','#c98a1f','#1f8a57','#ffb347']});
   }
   overlay.addEventListener('click', ()=>overlay.remove());
-  setTimeout(()=>overlay.remove(), 2800);
+  setTimeout(()=>overlay.remove(), isClean?2800:5200);
 }
 const CAREER_TASKS = [
  {key:"dsa", label:"DSA"},
@@ -251,14 +266,16 @@ async function writeDocQuiet(path, data){
 }
 
 async function clearDoc(path){
+  const existed = !!state[path.col][path.id];
   delete state[path.col][path.id];
   renderActiveOnly();
+  if(!db || !uid){ toast('Not signed in — nothing to clear'); return; }
   try{
     await deleteDoc(doc(db,'users',uid,path.col,path.id));
-    toast('Cleared');
+    toast(existed ? 'Cleared' : 'Already empty');
   }catch(e){
     console.error('delete failed', e);
-    toast('Could not clear — check your connection');
+    toast('Could not clear: '+(e.code||e.message||'unknown error'));
   }
 }
 
@@ -697,7 +714,7 @@ function renderToday(){
     </div>
 
     <div style="margin-top:16px;display:flex;justify-content:space-between;gap:10px;">
-      <button class="btn ghost" id="clearDay" ${Object.keys(d).length? '':'disabled'}>Clear this day's entry</button>
+      <button class="btn ghost" id="clearDay">Clear this day's entry</button>
       <button class="btn" id="saveDay">Save today's log</button>
     </div>
   `;
