@@ -552,8 +552,8 @@ const TABS = [
  {id:'skills', label:'Skills'},
  {id:'relax', label:'Relax'},
  {id:'finance', label:'Finance'},
- {id:'milestones', label:'Milestones'},
  {id:'weekly', label:'Weekly Review'},
+ {id:'milestones', label:'Milestones'},
 ];
 
 function renderTabs(){
