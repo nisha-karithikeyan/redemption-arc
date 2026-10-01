@@ -119,9 +119,36 @@ const CAREER_TASKS = [
  {key:"posts", label:"Post / content-related work"},
 ];
 
+// A curated 90-problem DSA sheet covering every core interview pattern —
+// essentially Blind 75 + the rest of NeetCode 150's highest-value problems.
+// Names are editable per-row in the UI, so swap any slot for your own pick.
+const DSA_PROBLEMS = (()=>{
+  const groups = [
+    ["Arrays & Hashing", ["Contains Duplicate","Valid Anagram","Two Sum","Group Anagrams","Top K Frequent Elements","Product of Array Except Self","Valid Sudoku","Longest Consecutive Sequence"]],
+    ["Two Pointers", ["Valid Palindrome","Two Sum II - Input Array Is Sorted","3Sum","Container With Most Water","Trapping Rain Water"]],
+    ["Sliding Window", ["Best Time to Buy and Sell Stock","Longest Substring Without Repeating Characters","Longest Repeating Character Replacement","Permutation in String","Minimum Window Substring","Sliding Window Maximum"]],
+    ["Stack", ["Valid Parentheses","Min Stack","Evaluate Reverse Polish Notation","Generate Parentheses","Daily Temperatures","Car Fleet"]],
+    ["Binary Search", ["Binary Search","Search a 2D Matrix","Koko Eating Bananas","Find Minimum in Rotated Sorted Array","Search in Rotated Sorted Array","Median of Two Sorted Arrays"]],
+    ["Linked List", ["Reverse Linked List","Merge Two Sorted Lists","Reorder List","Remove Nth Node From End of List","Copy List with Random Pointer","Add Two Numbers","Linked List Cycle","Merge k Sorted Lists"]],
+    ["Trees", ["Invert Binary Tree","Maximum Depth of Binary Tree","Diameter of Binary Tree","Balanced Binary Tree","Same Tree","Subtree of Another Tree","Lowest Common Ancestor of a BST","Binary Tree Level Order Traversal","Binary Tree Right Side View","Count Good Nodes in Binary Tree","Validate Binary Search Tree","Kth Smallest Element in a BST"]],
+    ["Tries", ["Implement Trie (Prefix Tree)","Design Add and Search Words Data Structure","Word Search II"]],
+    ["Heap / Priority Queue", ["Kth Largest Element in a Stream","Last Stone Weight","K Closest Points to Origin","Task Scheduler","Find Median from Data Stream"]],
+    ["Backtracking", ["Subsets","Combination Sum","Permutations","Subsets II","Word Search","Palindrome Partitioning"]],
+    ["Graphs", ["Number of Islands","Clone Graph","Max Area of Island","Pacific Atlantic Water Flow","Surrounded Regions","Rotting Oranges","Walls and Gates","Course Schedule","Redundant Connection"]],
+    ["1D Dynamic Programming", ["Climbing Stairs","House Robber","House Robber II","Longest Palindromic Substring","Palindromic Substrings","Decode Ways","Coin Change","Word Break"]],
+    ["2D Dynamic Programming", ["Unique Paths","Longest Common Subsequence","Best Time to Buy and Sell Stock with Cooldown","Edit Distance"]],
+    ["Greedy", ["Maximum Subarray","Jump Game","Gas Station"]],
+    ["Intervals", ["Merge Intervals"]],
+  ];
+  let n=0;
+  const out=[];
+  groups.forEach(([cat, names])=>names.forEach(name=>{ n++; out.push({id:'p'+n, cat, name}); }));
+  return out;
+})();
+
 /* ======================= STATE ======================= */
 let app, auth, db, uid=null, currentUser=null;
-let state = {days:{}, career:{}, skills:{}, profile:{}, weekly:{}, milestones:{}};
+let state = {days:{}, career:{}, skills:{}, profile:{}, weekly:{}, milestones:{}, dsa:{}};
 let activeTab = 'dashboard';
 let todayDate = iso(TODAY);
 let unsubs = [];
@@ -191,6 +218,9 @@ function subscribeAll(){
   unsubs.push(onSnapshot(doc(db,'users',uid,'skills','checklist'), snap=>{
     state.skills = snap.exists() ? snap.data() : {}; renderFromSync();
   }, err=>console.error(err)));
+  unsubs.push(onSnapshot(doc(db,'users',uid,'dsa','checklist'), snap=>{
+    state.dsa = snap.exists() ? snap.data() : {}; renderFromSync();
+  }, err=>console.error(err)));
   unsubs.push(onSnapshot(doc(db,'users',uid,'profile','main'), snap=>{
     state.profile = snap.exists() ? snap.data() : {}; renderFromSync();
   }, err=>console.error(err)));
@@ -201,6 +231,7 @@ function renderActiveOnly(){
   if(activeTab==='today') renderToday();
   if(activeTab==='history') renderHistory();
   if(activeTab==='career') renderCareer();
+  if(activeTab==='dsa') renderDSA();
   if(activeTab==='finance') renderFinance();
 }
 
@@ -301,6 +332,7 @@ const TABS = [
  {id:'today', label:'Today'},
  {id:'history', label:'History'},
  {id:'career', label:'Career'},
+ {id:'dsa', label:'DSA'},
  {id:'skills', label:'Skills'},
  {id:'relax', label:'Relax'},
  {id:'finance', label:'Finance'},
@@ -335,6 +367,7 @@ function renderAll(){
     <section class="view" id="view-today" ${activeTab!=='today'?'hidden':''}></section>
     <section class="view" id="view-history" ${activeTab!=='history'?'hidden':''}></section>
     <section class="view" id="view-career" ${activeTab!=='career'?'hidden':''}></section>
+    <section class="view" id="view-dsa" ${activeTab!=='dsa'?'hidden':''}></section>
     <section class="view" id="view-skills" ${activeTab!=='skills'?'hidden':''}></section>
     <section class="view" id="view-relax" ${activeTab!=='relax'?'hidden':''}></section>
     <section class="view" id="view-finance" ${activeTab!=='finance'?'hidden':''}></section>
@@ -347,6 +380,7 @@ function renderAll(){
   if(activeTab==='today') renderToday();
   if(activeTab==='history') renderHistory();
   if(activeTab==='career') renderCareer();
+  if(activeTab==='dsa') renderDSA();
   if(activeTab==='skills') renderSkills();
   if(activeTab==='relax') renderRelax();
   if(activeTab==='finance') renderFinance();
@@ -789,6 +823,41 @@ function renderCareer(){
   host.querySelectorAll('.proj-name-edit').forEach(inp=>inp.addEventListener('blur', ()=>{
     const val = inp.value.trim();
     writeDoc({col:'career', id:inp.dataset.wk}, {[inp.dataset.field]: val || null});
+  }));
+}
+
+/* ======================= DSA SHEET ======================= */
+function renderDSA(){
+  const host=document.getElementById('view-dsa'); if(!host) return;
+  const byCat = {};
+  DSA_PROBLEMS.forEach(p=>{ (byCat[p.cat] = byCat[p.cat]||[]).push(p); });
+  const totalDone = DSA_PROBLEMS.filter(p=>state.dsa[p.id] && state.dsa[p.id].done).length;
+  const groups = Object.entries(byCat).map(([cat, probs])=>{
+    const doneCount = probs.filter(p=>state.dsa[p.id] && state.dsa[p.id].done).length;
+    const rows = probs.map(p=>{
+      const entry = state.dsa[p.id] || {};
+      const done = !!entry.done;
+      const name = entry.name || p.name;
+      return `<div class="skill-item ${done?'done':''}">
+        <input type="checkbox" class="chk dsa-chk" data-id="${p.id}" ${done?'checked':''}>
+        <input type="text" class="dsa-name-edit" data-id="${p.id}" value="${name.replace(/"/g,'&quot;')}">
+      </div>`;
+    }).join('');
+    return `<div class="skill-group"><div class="bar-row"><strong style="color:var(--text);font-size:14.5px;">${cat}</strong><span>${doneCount}/${probs.length}</span></div><div class="bar" style="margin-bottom:10px;"><div style="width:${doneCount/probs.length*100}%"></div></div>${rows}</div>`;
+  }).join('');
+  host.innerHTML = `
+    <div class="section-title" style="margin-top:0;">90-problem DSA sheet — ${totalDone}/90 solved <span class="faint" style="text-transform:none;font-weight:400;">— names are editable, swap any slot for your own pick</span></div>
+    <div class="card"><div class="bar-row"><span>Overall progress</span><span class="num">${totalDone} / 90</span></div><div class="bar"><div style="width:${totalDone/90*100}%"></div></div></div>
+    <div class="card" style="margin-top:14px;">${groups}</div>
+  `;
+  host.querySelectorAll('.dsa-chk').forEach(c=>c.addEventListener('change', ()=>{
+    const cur = state.dsa[c.dataset.id] || {};
+    writeDoc({col:'dsa', id:'checklist'}, {[c.dataset.id]: {...cur, done: c.checked}}).then(renderDSA);
+  }));
+  host.querySelectorAll('.dsa-name-edit').forEach(inp=>inp.addEventListener('blur', ()=>{
+    const cur = state.dsa[inp.dataset.id] || {};
+    const val = inp.value.trim();
+    writeDoc({col:'dsa', id:'checklist'}, {[inp.dataset.id]: {...cur, name: val || null}});
   }));
 }
 
