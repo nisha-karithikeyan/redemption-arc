@@ -14,41 +14,36 @@ function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function fmtShort(d){return d.toLocaleDateString(undefined,{month:'short',day:'numeric'});}
 
-// Explicit AM/PM time picker (hour + minute + AM/PM selects) stored internally
-// as a 24h "HH:MM" string. A native <input type="time"> silently follows the
-// browser/OS locale for 12h vs 24h display, which is why AM/PM can vanish —
-// this control always shows it, on every device.
-function to24(h12, min, ampm){
-  let h = Number(h12)%12;
-  if(ampm==='PM') h += 12;
-  return String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
-}
-function from24(hhmm){
-  if(!hhmm) return {h12:'', min:'', ampm:'AM'};
+// Single-dropdown time picker, 5-minute steps, labeled in 12h with AM/PM
+// spelled out — stored internally as a 24h "HH:MM" string. A native
+// <input type="time"> silently follows the browser/OS locale for 12h vs 24h
+// display, which is why AM/PM can vanish; building the labels ourselves
+// means it always shows, on every device, in one easy scroll/type-to-jump list.
+function fmtTime(hhmm){
+  if(!hhmm) return '--';
   const [h,m] = hhmm.split(':').map(Number);
   const ampm = h>=12 ? 'PM' : 'AM';
   let h12 = h%12; if(h12===0) h12=12;
-  return {h12:String(h12), min:String(m).padStart(2,'0'), ampm};
+  return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+function snapTo5(hhmm){
+  const [h,m] = hhmm.split(':').map(Number);
+  let total = Math.round((h*60+m)/5)*5 % 1440;
+  return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
 }
 function timePicker(id, value){
-  const t = from24(value);
-  const hourOpts = Array.from({length:12},(_,i)=>i+1).map(h=>`<option value="${h}" ${t.h12==String(h)?'selected':''}>${h}</option>`).join('');
-  const minOpts = Array.from({length:60},(_,i)=>i).map(m=>{const mm=String(m).padStart(2,'0'); return `<option value="${mm}" ${t.min===mm?'selected':''}>${mm}</option>`;}).join('');
-  return `<div style="display:flex;gap:6px;" data-timepicker="${id}">
-    <select id="${id}-h" style="flex:1;"><option value="" ${t.h12===''?'selected':''} disabled>hr</option>${hourOpts}</select>
-    <select id="${id}-m" style="flex:1;"><option value="" ${t.min===''?'selected':''} disabled>min</option>${minOpts}</select>
-    <select id="${id}-ap" style="flex:1;"><option value="AM" ${t.ampm==='AM'?'selected':''}>AM</option><option value="PM" ${t.ampm==='PM'?'selected':''}>PM</option></select>
-  </div>`;
-}
-function fmtTime(hhmm){
-  if(!hhmm) return '--';
-  const t = from24(hhmm);
-  return `${t.h12}:${t.min} ${t.ampm}`;
+  const selectedVal = value ? snapTo5(value) : '';
+  let opts = `<option value="" ${!value?'selected':''} disabled>Select time</option>`;
+  for(let total=0; total<1440; total+=5){
+    const val = String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
+    opts += `<option value="${val}" ${selectedVal===val?'selected':''}>${fmtTime(val)}</option>`;
+  }
+  return `<select id="${id}">${opts}</select>`;
 }
 function readTimePicker(id){
-  const h=document.getElementById(id+'-h'), m=document.getElementById(id+'-m'), ap=document.getElementById(id+'-ap');
-  if(!h || !m || h.value==='' || m.value==='') return null;
-  return to24(h.value, m.value, ap.value);
+  const el = document.getElementById(id);
+  if(!el || el.value==='') return null;
+  return el.value;
 }
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 function dayIndexOf(date){return Math.floor((date-START)/864e5)+1;}
@@ -127,6 +122,19 @@ async function writeDoc(path, data){
   }
 }
 
+// Same as writeDoc but never re-renders — for the Today tab's instant-save
+// controls (toggles, craving log), which update their own bit of DOM directly
+// so a half-filled form isn't rebuilt (and its unsaved fields lost) on every click.
+async function writeDocQuiet(path, data){
+  state[path.col][path.id] = {...(state[path.col][path.id]||{}), ...data};
+  try{
+    await setDoc(doc(db,'users',uid,path.col,path.id), data, {merge:true});
+  }catch(e){
+    console.error('write failed', e);
+    toast('Could not save — check your connection');
+  }
+}
+
 async function clearDoc(path){
   delete state[path.col][path.id];
   renderActiveOnly();
@@ -139,21 +147,31 @@ async function clearDoc(path){
   }
 }
 
+// The Today tab edits a half-filled form live; a background sync landing
+// mid-edit must never rebuild it out from under the user (that was the bug
+// behind "most fields aren't saving" — any write, even one's own, re-rendered
+// the whole page via these listeners before the Save button was pressed).
+// Today manages its own DOM directly, so background snapshots skip it.
+function renderFromSync(){
+  if(activeTab==='today' || activeTab==='weekly') return;
+  renderAll();
+}
+
 function subscribeAll(){
   unsubs.forEach(u=>u());
   unsubs = [];
   ['days','career','weekly','milestones'].forEach(col=>{
     const un = onSnapshot(collection(db,'users',uid,col), snap=>{
       const obj={}; snap.forEach(d=>obj[d.id]=d.data());
-      state[col]=obj; renderAll();
+      state[col]=obj; renderFromSync();
     }, err=>console.error(col,err));
     unsubs.push(un);
   });
   unsubs.push(onSnapshot(doc(db,'users',uid,'skills','checklist'), snap=>{
-    state.skills = snap.exists() ? snap.data() : {}; renderAll();
+    state.skills = snap.exists() ? snap.data() : {}; renderFromSync();
   }, err=>console.error(err)));
   unsubs.push(onSnapshot(doc(db,'users',uid,'profile','main'), snap=>{
-    state.profile = snap.exists() ? snap.data() : {}; renderAll();
+    state.profile = snap.exists() ? snap.data() : {}; renderFromSync();
   }, err=>console.error(err)));
 }
 
@@ -509,7 +527,7 @@ function renderToday(){
         <label class="field" style="margin-top:12px;"><span>Ordered Zepto / Zomato today?</span>
           <div class="toggle-row"><button class="toggle ${d.ordered===false? 'active-yes':''}" data-field="ordered" data-val="false">No</button><button class="toggle ${d.ordered? 'active-no':''}" data-field="ordered" data-val="true">Yes</button></div>
         </label>
-        ${d.ordered ? `<label class="field" style="margin-top:10px;"><span>₹ Spent on that order</span><input type="number" id="f-spent" min="0" step="10" value="${d.amountSpent??''}" placeholder="0"></label>` : ''}
+        <label class="field" id="spentRow" style="margin-top:10px;" ${d.ordered? '':'hidden'}><span>₹ Spent on that order</span><input type="number" id="f-spent" min="0" step="10" value="${d.amountSpent??''}" placeholder="0"></label>
       </div>
     </div>
 
@@ -549,11 +567,30 @@ function renderToday(){
   host.querySelectorAll('.toggle[data-field]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const field=btn.dataset.field, val = btn.dataset.val==='true';
-      if(field==='relaxDone'){ const cur=state.days[todayDate]||{}; writeDoc({col:'days',id:todayDate},{relaxDone: !cur.relaxDone}); renderToday(); return; }
+      if(field==='relaxDone'){
+        const cur=state.days[todayDate]||{};
+        const next = !cur.relaxDone;
+        state.days[todayDate] = {...cur, relaxDone: next};
+        writeDocQuiet({col:'days',id:todayDate},{relaxDone: next});
+        btn.textContent = next? 'Done ✓':'Mark done';
+        btn.classList.toggle('active-yes', next);
+        return;
+      }
       const cur = (state.days[todayDate]||{})[field];
       const next = cur===val ? null : val;
-      writeDoc({col:'days',id:todayDate},{[field]: next});
-      renderToday();
+      state.days[todayDate] = {...(state.days[todayDate]||{}), [field]: next};
+      writeDocQuiet({col:'days',id:todayDate},{[field]: next});
+      // update this toggle pair's classes in place, no full re-render
+      host.querySelectorAll(`.toggle[data-field="${field}"]`).forEach(b=>{
+        b.classList.remove('active-yes','active-no');
+        const bVal = b.dataset.val==='true';
+        if(next===true && bVal) b.classList.add(field==='ordered'?'active-no':'active-yes');
+        if(next===false && !bVal) b.classList.add(field==='ordered'?'active-yes':'active-no');
+      });
+      if(field==='ordered'){
+        const row = document.getElementById('spentRow');
+        if(row) row.hidden = !next;
+      }
     });
   });
   host.querySelector('#addResisted').addEventListener('click', ()=>addCraving(true));
@@ -571,7 +608,7 @@ function addCraving(resisted){
   const trigger = input.value.trim() || (resisted?'craving':'slip');
   const cur = state.days[todayDate]||{};
   const list = (cur.cravings||[]).concat([{time:new Date().toTimeString().slice(0,5), trigger, resisted}]);
-  writeDoc({col:'days',id:todayDate},{cravings:list});
+  writeDocQuiet({col:'days',id:todayDate},{cravings:list});
   input.value='';
   renderCravingList(list);
 }
@@ -581,7 +618,7 @@ function renderCravingList(list){
   el.innerHTML = list.map((c,i)=>`<div class="craving-item">${c.resisted?'✅':'⚠️'} ${c.time} &middot; ${c.trigger} <button data-i="${i}">remove</button></div>`).join('');
   el.querySelectorAll('button[data-i]').forEach(b=>b.addEventListener('click',()=>{
     const i=Number(b.dataset.i); const cur=state.days[todayDate]||{}; const list2=(cur.cravings||[]).slice(); list2.splice(i,1);
-    writeDoc({col:'days',id:todayDate},{cravings:list2}); renderCravingList(list2);
+    writeDocQuiet({col:'days',id:todayDate},{cravings:list2}); renderCravingList(list2);
   }));
 }
 
