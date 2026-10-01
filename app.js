@@ -48,14 +48,20 @@ const RELAX = [
  {ico:"🎨",name:"Sketching / Doodling",desc:"Draw anything in front of you"},
  {ico:"📖",name:"Reading",desc:"20 minutes of fiction or non-fiction"},
  {ico:"📓",name:"Journaling",desc:"Write 3 honest lines about today"},
- {ico:"🌿",name:"Nature Sit",desc:"10 min outside, phone away"},
- {ico:"🎵",name:"Music",desc:"Listen deeply or play an instrument"},
- {ico:"📷",name:"Photo Walk",desc:"Capture 5 things that catch your eye"},
  {ico:"🧩",name:"Puzzle / Sudoku",desc:"One puzzle, no scrolling after"},
  {ico:"🍲",name:"New Healthy Recipe",desc:"Try cooking one new simple dish"},
- {ico:"💌",name:"Gratitude Note",desc:"A short letter to future you"},
+ {ico:"🧊",name:"Cold Reset",desc:"Splash cold water on your face / a short cold shower"},
+ {ico:"🗣️",name:"Micro Language Drill",desc:"Learn 5 new words in a language you want to speak"},
+ {ico:"🧹",name:"Declutter Sprint",desc:"Tidy one drawer, desk, or corner — 10 min, timer on"},
+ {ico:"🤸",name:"Stretch Flow",desc:"10 min of mobility / stretching, no gym needed"},
+ {ico:"📞",name:"Reach Out",desc:"Call or voice-note one person you've been meaning to talk to"},
+ {ico:"🧱",name:"Build Something",desc:"Origami, Lego, a small fix-it — anything with your hands"},
+ {ico:"🎬",name:"Intentional Watch",desc:"One documentary clip or talk, 15-20 min, phone away after"},
+ {ico:"🫁",name:"Box Breathing",desc:"4-4-4-4 breathing, 10 slow rounds"},
+ {ico:"🗒️",name:"Tomorrow on Paper",desc:"Plan tomorrow by hand — no app, just pen and paper"},
+ {ico:"🃏",name:"Skill Drill",desc:"10 min practicing one tiny skill — card trick, knot, juggling"},
 ];
-function relaxForIndex(i){return RELAX[(i-1)%10];}
+function relaxForIndex(i){return RELAX[(i-1)%RELAX.length];}
 
 const CORE_RULES = [
  {key:"wake", label:"Wake by 7:30am"},
@@ -170,6 +176,9 @@ function scoreForDay(d){
   if(!core.career && d.careerDone===false){
     flags.push(`No career task done`);
   }
+  if(d.ordered){
+    flags.push(`Ordered Zepto/Zomato — ₹${Number(d.amountSpent||0).toLocaleString()} spent`);
+  }
 
   let bonus=0;
   if(Number(d.screenTime||99) <= 3) bonus+=10;
@@ -188,6 +197,18 @@ function computeStreak(){
     const d = state.days[ds];
     const s = scoreForDay(d);
     if(s && s.score>=70) streak++; else break;
+  }
+  return streak;
+}
+
+function computeNoOrderStreak(){
+  let streak=0;
+  for(let i=TODAY_IDX;i>=1;i--){
+    const ds = iso(dateOfIndex(i));
+    const d = state.days[ds];
+    if(!d) break;
+    if(d.ordered) break;
+    streak++;
   }
   return streak;
 }
@@ -297,7 +318,9 @@ function renderDashboard(){
   const weights = days.filter(d=>d.weight).map(d=>Number(d.weight));
   const startW = weights[0], curW = weights[weights.length-1];
   const wDelta = (startW!=null && curW!=null) ? (curW-startW) : null;
-  const moneyTotal = days.reduce((s,d)=>s+Number(d.moneySaved||0),0);
+  const totalSpent = days.reduce((s,d)=>s+(d.ordered? Number(d.amountSpent||0):0),0);
+  const orderCount = days.filter(d=>d.ordered).length;
+  const noOrderStreak = computeNoOrderStreak();
   const careerVals = Object.values(state.career||{});
   const postsTotal = careerVals.reduce((s,c)=>s+Number(c.posts||0),0);
   const prodDone = careerVals.filter(c=>c.production).length;
@@ -327,7 +350,8 @@ function renderDashboard(){
         <p>Week ${CURRENT_WEEK} of 13 &middot; ${fmtShort(TODAY)} &middot; ${TOTAL_DAYS-TODAY_IDX} days left until Dec 30</p>
         <span class="streak-chip">\u{1F525} <span class="flame"></span> ${streak}-day streak (score 70+)</span>
         <span class="countdown-chip">Weight ${wDelta!=null ? (wDelta<=0?('↓ '+Math.abs(wDelta).toFixed(1)+'kg'):('↑ '+wDelta.toFixed(1)+'kg')) : 'log weight to start'}</span>
-        <span class="countdown-chip">₹ ${moneyTotal.toLocaleString()} saved</span>
+        <span class="countdown-chip">₹${totalSpent.toLocaleString()} spent on ${orderCount} order${orderCount===1?'':'s'}</span>
+        <span class="countdown-chip">\u{1F6AB} ${noOrderStreak}-day no-order streak</span>
         <div style="margin-top:10px;"><button class="btn secondary" id="exportBtn">⬇ Export full data to Excel</button></div>
       </div>
     </div>
@@ -435,7 +459,10 @@ function renderToday(){
           <label class="field"><span>Weight (kg)</span><input type="number" id="f-weight" min="0" step="0.1" value="${d.weight??''}" placeholder="weekly is fine"></label>
           <label class="field"><span>Mood (1-5)</span><input type="range" id="f-mood" min="1" max="5" value="${d.mood||3}"></label>
         </div>
-        <label class="field" style="margin-top:12px;"><span>₹ Saved by not ordering Zepto/Zomato</span><input type="number" id="f-money" min="0" step="10" value="${d.moneySaved??''}" placeholder="0"></label>
+        <label class="field" style="margin-top:12px;"><span>Ordered Zepto / Zomato today?</span>
+          <div class="toggle-row"><button class="toggle ${d.ordered===false? 'active-yes':''}" data-field="ordered" data-val="false">No</button><button class="toggle ${d.ordered? 'active-no':''}" data-field="ordered" data-val="true">Yes</button></div>
+        </label>
+        ${d.ordered ? `<label class="field" style="margin-top:10px;"><span>₹ Spent on that order</span><input type="number" id="f-spent" min="0" step="10" value="${d.amountSpent??''}" placeholder="0"></label>` : ''}
       </div>
     </div>
 
@@ -517,7 +544,7 @@ function saveDayFromForm(){
     focusHours: val('f-focus')!=='' ? Number(val('f-focus')):null,
     weight: val('f-weight')!=='' ? Number(val('f-weight')):null,
     mood: val('f-mood')? Number(val('f-mood')):null,
-    moneySaved: val('f-money')!=='' ? Number(val('f-money')):0,
+    amountSpent: val('f-spent')!=='' && val('f-spent')!==undefined ? Number(val('f-spent')):0,
     notes: val('f-notes')||'',
   };
   writeDoc({col:'days',id:todayDate}, patch).then(()=>{
@@ -593,32 +620,38 @@ function renderRelax(){
 function renderFinance(){
   const host=document.getElementById('view-finance'); if(!host) return;
   const days = allDaysSorted();
-  const total = days.reduce((s,d)=>s+Number(d.moneySaved||0),0);
-  const goal = state.profile.savingsGoal || 15000;
+  const total = days.reduce((s,d)=>s+(d.ordered? Number(d.amountSpent||0):0),0);
+  const orderCount = days.filter(d=>d.ordered).length;
+  const noOrderStreak = computeNoOrderStreak();
+  const cap = state.profile.spendCap || 3000;
   const weekly = Array.from({length:13},(_,w)=>{
     const from=addDays(START,w*7), to=addDays(START,Math.min(w*7+6,TOTAL_DAYS-1));
-    const sum = days.filter(d=>{const dd=new Date(d.date+'T00:00:00'); return dd>=from && dd<=to;}).reduce((s,d)=>s+Number(d.moneySaved||0),0);
+    const sum = days.filter(d=>{const dd=new Date(d.date+'T00:00:00'); return dd>=from && dd<=to && d.ordered;}).reduce((s,d)=>s+Number(d.amountSpent||0),0);
     return {w:w+1, sum};
   });
   const maxSum = Math.max(1,...weekly.map(w=>w.sum));
+  const thisWeekIdx = CURRENT_WEEK-1;
+  const thisWeekSpend = weekly[thisWeekIdx] ? weekly[thisWeekIdx].sum : 0;
   host.innerHTML = `
     <div class="hero" style="grid-template-columns:1fr;text-align:left;">
       <div>
-        <div class="stat"><div class="num" id="moneyNum">0</div><div class="lbl">Total saved by skipping Zepto / Zomato orders</div></div>
-        <div style="margin-top:12px;"><div class="bar-row"><span>Toward your goal</span><span>₹${total.toLocaleString()} / ${goal.toLocaleString()}</span></div><div class="bar"><div style="width:${Math.min(100,total/goal*100)}%"></div></div></div>
-        <label class="field" style="margin-top:14px;max-width:220px;"><span>Savings goal (₹)</span><input type="number" id="goalInput" min="0" step="500" value="${goal}"></label>
+        <div class="stat"><div class="num" id="moneyNum">0</div><div class="lbl">Total spent on Zepto / Zomato so far (${orderCount} order${orderCount===1?'':'s'})</div></div>
+        <div style="margin-top:12px;"><div class="bar-row"><span>This week's spend vs. your weekly cap</span><span>₹${thisWeekSpend.toLocaleString()} / ${cap.toLocaleString()}</span></div><div class="bar"><div style="width:${Math.min(100,thisWeekSpend/cap*100)}%;background:${thisWeekSpend>cap?'linear-gradient(90deg,var(--bad),#ff8a8a)':'linear-gradient(90deg,var(--accent),var(--accent2))'}"></div></div></div>
+        <label class="field" style="margin-top:14px;max-width:220px;"><span>Weekly spend cap (₹)</span><input type="number" id="goalInput" min="0" step="100" value="${cap}"></label>
+        <div class="streak-chip" style="margin-top:14px;">\u{1F6AB} ${noOrderStreak}-day streak without ordering</div>
       </div>
     </div>
-    <div class="section-title">Weekly savings</div>
+    <div class="section-title">Weekly spend</div>
     <div class="card">
       <div style="display:flex;align-items:flex-end;gap:6px;height:120px;">
-        ${weekly.map(w=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;background:linear-gradient(180deg,var(--accent2),var(--accent));border-radius:4px 4px 0 0;height:${Math.max(2,w.sum/maxSum*90)}px;"></div><div class="faint" style="font-size:10px;">W${w.w}</div></div>`).join('')}
+        ${weekly.map(w=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;background:${w.sum>cap?'linear-gradient(180deg,#ff8a8a,var(--bad))':'linear-gradient(180deg,var(--accent2),var(--accent))'};border-radius:4px 4px 0 0;height:${Math.max(2,w.sum/maxSum*90)}px;"></div><div class="faint" style="font-size:10px;">W${w.w}</div></div>`).join('')}
       </div>
+      <div class="faint" style="font-size:11px;margin-top:8px;">Lower is better here — red bars are weeks you went over your cap.</div>
     </div>
   `;
   animateNumber(document.getElementById('moneyNum'), total);
   document.getElementById('goalInput').addEventListener('change', e=>{
-    writeDoc({col:'profile', id:'main'}, {savingsGoal: Number(e.target.value)||0}).then(renderFinance);
+    writeDoc({col:'profile', id:'main'}, {spendCap: Number(e.target.value)||0}).then(renderFinance);
   });
 }
 
@@ -683,7 +716,7 @@ function exportExcel(){
     return {Date:d.date, Wake:d.wake||'', Sleep:d.sleep||'', Steps:d.steps||'', 'Water(L)':d.water||'', Calories:d.calories||'',
       'Junk-Free':d.junkFree===true?'Yes':d.junkFree===false?'No':'', 'Career Done':d.careerDone===true?'Yes':d.careerDone===false?'No':'',
       'Screen Time(h)':d.screenTime||'', 'Focus Hours':d.focusHours||'', 'Weight(kg)':d.weight||'', Mood:d.mood||'',
-      'Relax Done':d.relaxDone?'Yes':'', 'Money Saved':d.moneySaved||0, Score: sc?sc.score:'', Notes:d.notes||''};
+      'Relax Done':d.relaxDone?'Yes':'', 'Ordered Food':d.ordered?'Yes':'', 'Amount Spent':d.ordered?(d.amountSpent||0):0, Score: sc?sc.score:'', Notes:d.notes||''};
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(days), 'Daily Log');
 
