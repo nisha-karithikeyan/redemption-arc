@@ -111,6 +111,13 @@ const CORE_RULES = [
 ];
 const MILESTONES = [30,60,90];
 const MOOD_EMOJI = ["\u{1F62B}","\u{1F615}","\u{1F610}","\u{1F642}","\u{1F60A}"]; // 1..5
+const CAREER_TASKS = [
+ {key:"dsa", label:"DSA"},
+ {key:"linkedin", label:"LinkedIn clean-up"},
+ {key:"github", label:"GitHub clean-up"},
+ {key:"project", label:"Project work"},
+ {key:"posts", label:"Post / content-related work"},
+];
 
 /* ======================= STATE ======================= */
 let app, auth, db, uid=null, currentUser=null;
@@ -225,7 +232,7 @@ function scoreForDay(d){
     steps: Number(d.steps||0) >= 8000,
     water: Number(d.water||0) >= 3,
     clean: d.junkFree === true && Number(d.calories||9999) <= 1200,
-    career: d.careerDone === true,
+    career: !!(d.careerTasks && Object.values(d.careerTasks).some(Boolean)),
   };
   CORE_RULES.forEach(r=>{ if(core[r.key]) score+=10; });
 
@@ -248,7 +255,7 @@ function scoreForDay(d){
   if(Number(d.calories||0) > 1200){
     flags.push(`${(Number(d.calories)-1200).toLocaleString()} cal over your 1200 budget`);
   }
-  if(!core.career && d.careerDone===false){
+  if(!core.career && d.careerTasks){
     flags.push(`No career task done`);
   }
   if(d.ordered){
@@ -522,10 +529,12 @@ function renderToday(){
           <label class="field"><span>Steps</span><input type="number" id="f-steps" min="0" step="100" value="${d.steps??''}" placeholder="8000-10000"></label>
           <label class="field"><span>Water (L)</span><input type="number" id="f-water" min="0" max="5" step="0.1" value="${d.water??''}" placeholder="3"></label>
           <label class="field"><span>Calories</span><input type="number" id="f-calories" min="0" step="10" value="${d.calories??''}" placeholder="1200"></label>
-          <label class="field"><span>Career task done?</span>
-            <div class="toggle-row"><button class="toggle ${d.careerDone? 'active-yes':''}" data-field="careerDone" data-val="true">Yes</button><button class="toggle ${d.careerDone===false? 'active-no':''}" data-field="careerDone" data-val="false">No</button></div>
-          </label>
         </div>
+        <label class="field" style="margin-top:12px;"><span>Career task — what did you actually do today?</span>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+            ${CAREER_TASKS.map(t=>`<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:400;color:var(--text);"><input type="checkbox" class="chk career-task-chk" data-key="${t.key}" ${d.careerTasks && d.careerTasks[t.key]?'checked':''}> ${t.label}</label>`).join('')}
+          </div>
+        </label>
         <label class="field" style="margin-top:12px;"><span>Stayed off junk / sodium-heavy food today?</span>
           <div class="toggle-row"><button class="toggle ${d.junkFree? 'active-yes':''}" data-field="junkFree" data-val="true">Clean</button><button class="toggle ${d.junkFree===false? 'active-no':''}" data-field="junkFree" data-val="false">Slipped</button></div>
         </label>
@@ -602,6 +611,13 @@ function renderToday(){
     document.getElementById('relaxCardIco').textContent = chosen.ico;
     document.getElementById('relaxCardDesc').textContent = chosen.desc;
   });
+
+  host.querySelectorAll('.career-task-chk').forEach(cb=>cb.addEventListener('change', ()=>{
+    const cur = state.days[todayDate]||{};
+    const tasks = {...(cur.careerTasks||{}), [cb.dataset.key]: cb.checked};
+    state.days[todayDate] = {...cur, careerTasks: tasks};
+    writeDocQuiet({col:'days',id:todayDate}, {careerTasks: tasks});
+  }));
 
   host.querySelector('#dateInput').addEventListener('change', e=>{ todayDate=e.target.value; renderToday(); });
   host.querySelectorAll('.toggle[data-field]').forEach(btn=>{
@@ -714,7 +730,7 @@ function renderHistory(){
       <td>${d.water!=null? d.water+'L' : '--'}</td>
       <td>${d.calories!=null? d.calories : '--'}</td>
       <td>${d.junkFree===true?'✅':d.junkFree===false?'❌':'--'}</td>
-      <td>${d.careerDone===true?'✅':d.careerDone===false?'❌':'--'}</td>
+      <td title="${d.careerTasks? CAREER_TASKS.filter(t=>d.careerTasks[t.key]).map(t=>t.label).join(', ')||'none':''}">${d.careerTasks? (Object.values(d.careerTasks).some(Boolean)?'✅':'❌') : '--'}</td>
       <td>${d.weight!=null? d.weight+'kg' : '--'}</td>
       <td>${d.ordered? '₹'+(d.amountSpent||0) : (d.ordered===false? '—' : '--')}</td>
       <td>${sc && sc.flags.length? `<span style="color:var(--bad);">${sc.flags.length} ⚠</span>` : (d.date in state.days? '✅':'--')}</td>
@@ -954,7 +970,8 @@ function exportExcel(){
   const days = allDaysSorted().map(d=>{
     const sc = scoreForDay(d);
     return {Date:d.date, Wake:d.wake?fmtTime(d.wake):'', Sleep:d.sleep?fmtTime(d.sleep):'', Steps:d.steps||'', 'Water(L)':d.water||'', Calories:d.calories||'',
-      'Junk-Free':d.junkFree===true?'Yes':d.junkFree===false?'No':'', 'Career Done':d.careerDone===true?'Yes':d.careerDone===false?'No':'',
+      'Junk-Free':d.junkFree===true?'Yes':d.junkFree===false?'No':'',
+      DSA:d.careerTasks&&d.careerTasks.dsa?'Yes':'', 'LinkedIn Clean-up':d.careerTasks&&d.careerTasks.linkedin?'Yes':'', 'GitHub Clean-up':d.careerTasks&&d.careerTasks.github?'Yes':'', 'Project Work':d.careerTasks&&d.careerTasks.project?'Yes':'', 'Post Work':d.careerTasks&&d.careerTasks.posts?'Yes':'',
       'Screen Time(h)':d.screenTime||'', 'Focus Hours':d.focusHours||'', 'Weight(kg)':d.weight||'', Mood:d.mood||'',
       'Relax Done':d.relaxDone?'Yes':'', 'Ordered Food':d.ordered?'Yes':'', 'Order Amount':d.ordered?(d.amountSpent||0):0, 'Other Spend':d.otherSpend||0, 'Other Spend For':d.otherSpendNote||'', Score: sc?sc.score:'', Notes:d.notes||''};
   });
