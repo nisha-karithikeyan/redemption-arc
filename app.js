@@ -201,6 +201,84 @@ const CAREER_TASKS = [
  {key:"posts", label:"Post / content-related work"},
 ];
 
+// A realistic 3-month AI Engineering path: 17 nodes, each with a concept
+// explainer, a concrete build task, and real external resources — distilled
+// from the roadmap.sh AI Engineer track with the filler (generic dev tooling,
+// the full vendor-platform survey) cut and an evaluation/observability node
+// added back in, since that's the actual gap in most "RAG tutorial" learning.
+const AIE_NODES = [
+ {id:'n1', month:1, icon:'\u{1F9ED}', title:'What is an AI Engineer?', xp:50,
+   concept:"An AI Engineer builds products on top of existing models (LLMs, embeddings, vision models) rather than training models from scratch like an ML researcher. The job is integration, prompting, data pipelines, and reliability — not matrix calculus.",
+   build:'No code today. Write a one-paragraph answer: "What would I build in my first 30 days as an AI engineer at a startup?" Save it — revisit it at the capstone.',
+   resources:[{name:'roadmap.sh — AI Engineer', url:'https://roadmap.sh/ai-engineer'}]},
+ {id:'n2', month:1, icon:'\u{1F524}', title:'LLM Fundamentals', xp:50,
+   concept:'Tokens are the units models read/write (roughly 4 characters = 1 token in English). Context window = how many tokens a model can hold in one request. Inference = running a trained model to get output; training = adjusting its weights — as an AI engineer you almost always do the former, never the latter.',
+   build:'Write a short script that counts tokens in a paragraph (tiktoken in Python, or gpt-tokenizer in JS) and prints an estimated cost at current GPT-4o-mini pricing.',
+   resources:[{name:'OpenAI Tokenizer', url:'https://platform.openai.com/tokenizer'}]},
+ {id:'n3', month:1, icon:'✍️', title:'Prompt Engineering', xp:60,
+   concept:'System prompts set persistent behavior; user prompts carry the request. Few-shot examples teach format by showing 2–3 examples before the real question. Clear, structured prompts beat clever wording almost every time.',
+   build:'Build a CLI tool that takes a topic and returns a structured JSON summary (title, 3 bullets, difficulty) — try it zero-shot, then few-shot, and compare the outputs.',
+   resources:[{name:'Prompt Engineering Guide', url:'https://www.promptingguide.ai'}]},
+ {id:'n4', month:1, icon:'\u{1F4AC}', title:'OpenAI API & Chat Completions', xp:70,
+   concept:'The Chat Completions API takes a list of role-tagged messages (system/user/assistant) and returns a new assistant message. Almost every LLM product is a loop around this one call.',
+   build:'Build a terminal chatbot (Python or Node) that keeps conversation history in an array and streams the response back token by token.',
+   resources:[{name:'OpenAI API Reference', url:'https://platform.openai.com/docs/api-reference/chat'}]},
+ {id:'n5', month:1, icon:'\u{1F6E0}️', title:'Function Calling & Structured Output', xp:70,
+   concept:"Function calling lets the model choose to call a function you've defined (via a JSON schema) instead of just replying in text — this is the mechanism underneath every agent and tool. JSON mode forces a reply into a schema you define.",
+   build:'Build a bot that answers "what’s 23 × 47?" or "weather in Chennai?" by calling a calculator function and a (mocked) weather function you define.',
+   resources:[{name:'Function Calling Guide', url:'https://platform.openai.com/docs/guides/function-calling'}]},
+ {id:'n6', month:1, icon:'\u{1F4B0}', title:'Token Economics & Cost Control', xp:50,
+   concept:'Every call costs money per input + output token. Costs explode fast with long context, RAG, and agent loops. Caching, trimming history, and picking smaller models for simple tasks are the main levers.',
+   build:"Add a running cost tracker to your Node 4 chatbot that prints total $ spent after each reply, using the model's published per-1k-token price.",
+   resources:[{name:'OpenAI Pricing', url:'https://openai.com/api/pricing'}]},
+ {id:'n7', month:2, icon:'\u{1F9EC}', title:'Embeddings', xp:60,
+   concept:'An embedding turns text into a vector of numbers positioned so similar meanings sit close together in that space. Cosine similarity measures how close two vectors are — that’s the math behind "semantic search."',
+   build:'Embed 10 sentences with the OpenAI embeddings API, compute cosine similarity between every pair, and print the most similar pair.',
+   resources:[{name:'OpenAI Embeddings Guide', url:'https://platform.openai.com/docs/guides/embeddings'}]},
+ {id:'n8', month:2, icon:'\u{1F5C4}️', title:'Vector Databases', xp:70,
+   concept:'A vector database stores embeddings and answers "find me the K most similar vectors to this one" fast, even over millions of entries — the retrieval half of RAG.',
+   build:'Install Chroma locally, load 20 short notes into it, and query it with a question to get back the 3 most relevant notes.',
+   resources:[{name:'Chroma Docs', url:'https://docs.trychroma.com'}]},
+ {id:'n9', month:2, icon:'\u{1F4DA}', title:'RAG Pipeline', xp:90,
+   concept:'Retrieval-Augmented Generation: chunk your documents, embed the chunks, store them in a vector DB, retrieve the top-K relevant chunks for a question, then stuff them into the prompt so the model answers from YOUR data, not just its training data.',
+   build:'Build a RAG chatbot over a folder of your own notes or a PDF: chunk it, embed with OpenAI, store in Chroma, retrieve + answer questions about the content.',
+   resources:[{name:'RAG Tutorial (LangChain)', url:'https://python.langchain.com/docs/tutorials/rag/'}]},
+ {id:'n10', month:2, icon:'\u{1F999}', title:'Open-Source Models (Hugging Face / Ollama)', xp:70,
+   concept:'Open-source models (Llama, Mistral, Qwen) run on your own machine or server — no per-token cost, full data privacy, but you manage the infra. Ollama makes running them locally a one-line command.',
+   build:'Install Ollama, pull a small model, and swap it into your Node 9 RAG chatbot in place of the OpenAI model.',
+   resources:[{name:'Ollama', url:'https://ollama.com'},{name:'Hugging Face Hub', url:'https://huggingface.co/models'}]},
+ {id:'n11', month:2, icon:'\u{1F4CA}', title:'Evaluation & Observability', xp:60,
+   concept:"Production AI apps log every prompt/response pair and score them (accuracy, relevance, latency, cost) — without this you're flying blind on whether a prompt change made things better or worse. This is what separates a shipped product from a tutorial demo.",
+   build:'Add logging to your RAG app: save every question, retrieved chunks, answer, latency, and cost to a local file or SQLite table, then write a script that reports averages.',
+   resources:[{name:'LangSmith (tracing/eval)', url:'https://docs.smith.langchain.com'}]},
+ {id:'n12', month:2, icon:'\u{1F6E1}️', title:'AI Safety & Prompt Injection', xp:50,
+   concept:'Prompt injection = a user hides instructions in their input to hijack your system prompt ("ignore previous instructions..."). Defenses: never trust retrieved/user content as instructions, validate outputs, run inputs through a moderation check.',
+   build:"Run user questions through OpenAI's free Moderation API before they reach your RAG app's main prompt, and refuse/flag anything it marks unsafe.",
+   resources:[{name:'OpenAI Moderation API', url:'https://platform.openai.com/docs/guides/moderation'}]},
+ {id:'n13', month:3, icon:'\u{1F916}', title:'AI Agents & ReAct', xp:80,
+   concept:'An agent loops: think → decide which tool to call → observe the result → think again → ... until it has a final answer. ReAct (Reason+Act) is the classic pattern behind this loop.',
+   build:'Build a small agent with no framework that can use 2 tools — a calculator and your Node 9 RAG search — and decides on its own which to call.',
+   resources:[{name:'ReAct Prompting Explainer', url:'https://www.promptingguide.ai/techniques/react'}]},
+ {id:'n14', month:3, icon:'\u{1F517}', title:'Agent Framework (LangChain or LlamaIndex)', xp:70,
+   concept:'Frameworks like LangChain and LlamaIndex give you pre-built chains, agents, memory, and retrievers so you stop hand-rolling plumbing — worth adopting once you understand what they’re wrapping, which you now do.',
+   build:'Rebuild your Node 13 agent using LangChain’s (or LlamaIndex’s) agent/tool abstractions — same behavior, far less boilerplate.',
+   resources:[{name:'LangChain Agents', url:'https://python.langchain.com/docs/concepts/agents/'}]},
+ {id:'n15', month:3, icon:'\u{1F5BC}️', title:'Multimodal AI', xp:60,
+   concept:'Multimodal models accept more than text — images (Vision), audio (Whisper for speech-to-text, TTS for speech-out). Same API shape, different input/output type.',
+   build:'Add one multimodal feature to an earlier project: let users upload an image and ask about it (Vision API), or speak a question that gets transcribed (Whisper) before it hits your RAG pipeline.',
+   resources:[{name:'OpenAI Vision Guide', url:'https://platform.openai.com/docs/guides/vision'},{name:'Whisper API', url:'https://platform.openai.com/docs/guides/speech-to-text'}]},
+ {id:'n16', month:3, icon:'\u{1F3C6}', title:'Capstone: Full AI App', xp:120,
+   concept:'Combine everything: RAG + an agent with at least one tool + eval logging + basic injection defense + a simple UI. This is the single project that goes at the top of your portfolio.',
+   build:'Ship one complete app end to end, and deploy it somewhere reachable by a link (Render, Railway, or a recorded demo if deploy time runs out).',
+   resources:[]},
+ {id:'n17', month:3, icon:'\u{1F4E3}', title:'Portfolio & Interview Prep', xp:50,
+   concept:'Interviewers for AI engineering roles want to see you can explain tradeoffs (RAG vs fine-tuning, open vs closed models, cost vs latency) and discuss one real project in depth — not recite a tutorial.',
+   build:'Write a README for your capstone explaining the architecture and why you made each tradeoff. Post it with a short demo to GitHub and LinkedIn.',
+   resources:[]},
+];
+const AIE_LEVELS = [0,120,280,480,720,1000,1300];
+const AIE_RANKS = ['Curious Newcomer','Prompt Apprentice','RAG Builder','Agent Engineer','Systems Thinker','AI Engineer'];
+
 // A curated 90-problem DSA sheet covering every core interview pattern —
 // essentially Blind 75 + the rest of NeetCode 150's highest-value problems.
 // Names are editable per-row in the UI, so swap any slot for your own pick.
@@ -230,7 +308,8 @@ const DSA_PROBLEMS = (()=>{
 
 /* ======================= STATE ======================= */
 let app, auth, db, uid=null, currentUser=null;
-let state = {days:{}, career:{}, skills:{}, profile:{}, weekly:{}, milestones:{}, dsa:{}};
+let state = {days:{}, career:{}, skills:{}, profile:{}, weekly:{}, milestones:{}, dsa:{}, aie:{}};
+let aieSelected = null;
 let activeTab = 'dashboard';
 let todayDate = iso(TODAY);
 let unsubs = [];
@@ -305,6 +384,9 @@ function subscribeAll(){
   unsubs.push(onSnapshot(doc(db,'users',uid,'dsa','checklist'), snap=>{
     state.dsa = snap.exists() ? snap.data() : {}; renderFromSync();
   }, err=>console.error(err)));
+  unsubs.push(onSnapshot(doc(db,'users',uid,'aie','progress'), snap=>{
+    state.aie = snap.exists() ? snap.data() : {}; renderFromSync();
+  }, err=>console.error(err)));
   unsubs.push(onSnapshot(doc(db,'users',uid,'profile','main'), snap=>{
     state.profile = snap.exists() ? snap.data() : {}; renderFromSync();
   }, err=>console.error(err)));
@@ -316,6 +398,7 @@ function renderActiveOnly(){
   if(activeTab==='history') renderHistory();
   if(activeTab==='career') renderCareer();
   if(activeTab==='dsa') renderDSA();
+  if(activeTab==='aie') renderAIE();
   if(activeTab==='finance') renderFinance();
 }
 
@@ -465,6 +548,7 @@ const TABS = [
  {id:'history', label:'History'},
  {id:'career', label:'Career'},
  {id:'dsa', label:'DSA'},
+ {id:'aie', label:'AI Roadmap'},
  {id:'skills', label:'Skills'},
  {id:'relax', label:'Relax'},
  {id:'finance', label:'Finance'},
@@ -500,6 +584,7 @@ function renderAll(){
     <section class="view" id="view-history" ${activeTab!=='history'?'hidden':''}></section>
     <section class="view" id="view-career" ${activeTab!=='career'?'hidden':''}></section>
     <section class="view" id="view-dsa" ${activeTab!=='dsa'?'hidden':''}></section>
+    <section class="view" id="view-aie" ${activeTab!=='aie'?'hidden':''}></section>
     <section class="view" id="view-skills" ${activeTab!=='skills'?'hidden':''}></section>
     <section class="view" id="view-relax" ${activeTab!=='relax'?'hidden':''}></section>
     <section class="view" id="view-finance" ${activeTab!=='finance'?'hidden':''}></section>
@@ -513,6 +598,7 @@ function renderAll(){
   if(activeTab==='history') renderHistory();
   if(activeTab==='career') renderCareer();
   if(activeTab==='dsa') renderDSA();
+  if(activeTab==='aie') renderAIE();
   if(activeTab==='skills') renderSkills();
   if(activeTab==='relax') renderRelax();
   if(activeTab==='finance') renderFinance();
@@ -1006,6 +1092,117 @@ function renderDSA(){
     const val = inp.value.trim();
     writeDoc({col:'dsa', id:'checklist'}, {[inp.dataset.id]: {...cur, name: val || null}});
   }));
+}
+
+/* ======================= AI ENGINEER ROADMAP (game map) ======================= */
+function aieXP(){ return AIE_NODES.reduce((s,n)=> s + (state.aie[n.id]&&state.aie[n.id].done ? n.xp : 0), 0); }
+function aieLevel(xp){
+  let lvl=1;
+  for(let i=1;i<AIE_LEVELS.length;i++){ if(xp>=AIE_LEVELS[i]) lvl=i+1; }
+  return Math.min(lvl, AIE_RANKS.length);
+}
+function aieStatus(index){
+  if(index===0) return (state.aie['n1']&&state.aie['n1'].done) ? 'done' : 'current';
+  const prevDone = state.aie[AIE_NODES[index-1].id] && state.aie[AIE_NODES[index-1].id].done;
+  const thisDone = state.aie[AIE_NODES[index].id] && state.aie[AIE_NODES[index].id].done;
+  if(thisDone) return 'done';
+  if(prevDone) return 'current';
+  return 'locked';
+}
+const AIE_ALIGN = ['flex-start','center','flex-end'];
+function renderAIE(){
+  const host=document.getElementById('view-aie'); if(!host) return;
+  const xp = aieXP();
+  const totalXP = AIE_NODES.reduce((s,n)=>s+n.xp,0);
+  const level = aieLevel(xp);
+  const rank = AIE_RANKS[level-1];
+  const nextThreshold = AIE_LEVELS[level] ?? totalXP;
+  const prevThreshold = AIE_LEVELS[level-1] ?? 0;
+  const levelPct = nextThreshold>prevThreshold ? Math.min(100,((xp-prevThreshold)/(nextThreshold-prevThreshold))*100) : 100;
+  const doneCount = AIE_NODES.filter(n=>state.aie[n.id]&&state.aie[n.id].done).length;
+
+  const months = [1,2,3];
+  const nodesHtml = months.map(m=>{
+    const inMonth = AIE_NODES.map((n,i)=>({n,i})).filter(x=>x.n.month===m);
+    const rows = inMonth.map(({n,i})=>{
+      const status = aieStatus(i);
+      const align = AIE_ALIGN[i%3];
+      return `<div style="display:flex;justify-content:${align};">
+        <button class="aie-node ${status}" data-idx="${i}" style="${align==='center'?'':''}">
+          <span class="aie-node-icon">${status==='locked'?'\u{1F512}':n.icon}</span>
+          <span class="aie-node-num">${i+1}</span>
+        </button>
+      </div>`;
+    }).join('<div class="aie-connector"></div>');
+    return `<div class="aie-month"><div class="aie-month-label">Month ${m}</div>${rows}</div>`;
+  }).join('<div class="aie-connector aie-month-gap"></div>');
+
+  host.innerHTML = `
+    <div class="aie-hud">
+      <div class="aie-hud-level">
+        <div class="aie-level-badge">Lv ${level}</div>
+        <div><div style="font-family:'Fraunces',serif;font-size:17px;font-weight:600;">${rank}</div><div class="faint" style="font-size:12px;">${doneCount}/${AIE_NODES.length} nodes cleared</div></div>
+      </div>
+      <div style="flex:1;min-width:160px;">
+        <div class="bar-row"><span>XP</span><span class="num">${xp} / ${level<AIE_RANKS.length? nextThreshold : totalXP}</span></div>
+        <div class="bar"><div style="width:${levelPct}%"></div></div>
+      </div>
+    </div>
+
+    <div class="aie-map">${nodesHtml}</div>
+
+    <div id="aieDetail"></div>
+  `;
+
+  host.querySelectorAll('.aie-node').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const idx = Number(btn.dataset.idx);
+      if(aieStatus(idx)==='locked'){ toast('Clear the previous node first'); return; }
+      aieSelected = AIE_NODES[idx].id;
+      renderAieDetail();
+      document.getElementById('aieDetail').scrollIntoView({behavior:'smooth', block:'nearest'});
+    });
+  });
+
+  if(aieSelected) renderAieDetail();
+}
+
+function renderAieDetail(){
+  const host = document.getElementById('aieDetail'); if(!host) return;
+  const idx = AIE_NODES.findIndex(n=>n.id===aieSelected);
+  if(idx<0){ host.innerHTML=''; return; }
+  const n = AIE_NODES[idx];
+  const status = aieStatus(idx);
+  const done = status==='done';
+  host.innerHTML = `
+    <div class="card aie-detail-card" style="margin-top:16px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+        <div style="font-size:30px;">${n.icon}</div>
+        <div><div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;">Node ${idx+1} of ${AIE_NODES.length} · ${n.xp} XP</div><h3 style="margin:2px 0 0;font-size:19px;">${n.title}</h3></div>
+      </div>
+      <div class="section-title" style="margin:14px 0 6px;">Concept</div>
+      <p style="margin:0;font-size:14px;line-height:1.6;color:var(--text-dim);">${n.concept}</p>
+      <div class="section-title" style="margin:14px 0 6px;">What to build</div>
+      <p style="margin:0;font-size:14px;line-height:1.6;color:var(--text-dim);">${n.build}</p>
+      ${n.resources.length? `<div class="section-title" style="margin:14px 0 6px;">Resources</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">${n.resources.map(r=>`<a href="${r.url}" target="_blank" rel="noopener" class="btn secondary" style="font-size:12.5px;padding:7px 12px;">${r.name} ↗</a>`).join('')}</div>` : ''}
+      <div style="margin-top:18px;display:flex;justify-content:flex-end;">
+        <button class="btn ${done?'secondary':''}" id="aieComplete">${done? 'Mark as not done' : 'Mark as learned ✔'}</button>
+      </div>
+    </div>
+  `;
+  host.querySelector('#aieComplete').addEventListener('click', ()=>{
+    const xpBefore = aieXP(); const levelBefore = aieLevel(xpBefore);
+    const newDone = !done;
+    writeDoc({col:'aie', id:'progress'}, {[n.id]: {done:newDone}}).then(()=>{
+      renderAIE();
+      if(newDone){
+        const xpAfter = aieXP(); const levelAfter = aieLevel(xpAfter);
+        if(window.confetti) confetti({particleCount:120, spread:80, origin:{y:0.6}, colors:['#4f8cff','#8a5cf6','#e2601f']});
+        toast(levelAfter>levelBefore ? `Node cleared — Level up! Lv ${levelAfter}: ${AIE_RANKS[levelAfter-1]}` : `Node cleared — +${n.xp} XP`);
+      }
+    });
+  });
 }
 
 /* ======================= SKILLS ======================= */
