@@ -420,17 +420,46 @@ function fmtMinutes(mins){
 const SLEEP_TARGET = minutesAfterNoon("23:00"); // 660
 const WAKE_TARGET = 7*60+30; // minutes after midnight
 
-function scoreForDay(d){
+// Steps ramp from a realistic 4,000/day start up to the full 10,000 target
+// over 6 weeks, instead of demanding 8-10k from day one.
+const STEP_RAMP_START = 4000, STEP_RAMP_END = 10000, STEP_RAMP_DAYS = 42;
+function stepTarget(dayIndex){
+  if(dayIndex>=STEP_RAMP_DAYS) return STEP_RAMP_END;
+  if(dayIndex<=1) return STEP_RAMP_START;
+  return Math.round(STEP_RAMP_START + (STEP_RAMP_END-STEP_RAMP_START)*(dayIndex-1)/(STEP_RAMP_DAYS-1));
+}
+
+// Every day with no entry at all before today counts as "missed." Debt is
+// missed days minus days already repaid by hitting the boosted catch-up bar.
+function missedDaysCount(){
+  let n=0;
+  for(let i=1;i<TODAY_IDX;i++){ if(!state.days[iso(dateOfIndex(i))]) n++; }
+  return n;
+}
+function catchUpDebt(){
+  return Math.max(0, missedDaysCount() - (state.profile.catchUpRepaid||0));
+}
+function catchUpBoost(){
+  return 1 + Math.min(catchUpDebt(),5)*0.2; // +20% per missed day, capped at +100%
+}
+
+function scoreForDay(d, dateStr){
   if(!d) return null;
+  const dayIdx = dateStr ? dayIndexOf(new Date(dateStr+'T00:00:00')) : TODAY_IDX;
+  const isToday = dayIdx === TODAY_IDX;
+  const target = stepTarget(dayIdx);
+  const boostedTarget = isToday ? Math.round(target*catchUpBoost()) : target;
+  const careerNeeded = (isToday && catchUpDebt()>0) ? 2 : 1;
   let score=0;
   const flags=[];
+  const careerDoneCount = d.careerTasks ? Object.values(d.careerTasks).filter(Boolean).length : 0;
   const core = {
     wake: !!(d.wake && (d.wake.split(':').map(Number).reduce((h,m,i)=>i===0?h*60+m:h+m,0)) <= WAKE_TARGET),
     sleep: !!(d.sleep && minutesAfterNoon(d.sleep) <= SLEEP_TARGET),
-    steps: Number(d.steps||0) >= 8000,
+    steps: Number(d.steps||0) >= boostedTarget,
     water: Number(d.water||0) >= 3,
     clean: d.junkFree === true && Number(d.calories||9999) <= 1200,
-    career: !!(d.careerTasks && Object.values(d.careerTasks).some(Boolean)),
+    career: careerDoneCount >= careerNeeded,
   };
   CORE_RULES.forEach(r=>{ if(core[r.key]) score+=10; });
 
@@ -442,7 +471,7 @@ function scoreForDay(d){
     flags.push(`Slept ${fmtMinutes(minutesAfterNoon(d.sleep)-SLEEP_TARGET)} past the 11:00pm curfew`);
   }
   if(!core.steps && d.steps!=null){
-    flags.push(`${(8000-Number(d.steps)).toLocaleString()} steps short of 8,000`);
+    flags.push(`${(boostedTarget-Number(d.steps)).toLocaleString()} steps short of ${boostedTarget.toLocaleString()}${boostedTarget>target?' (boosted for catch-up)':''}`);
   }
   if(!core.water && d.water!=null){
     flags.push(`${(3-Number(d.water)).toFixed(1)}L short of your 3L water goal`);
@@ -454,7 +483,7 @@ function scoreForDay(d){
     flags.push(`${(Number(d.calories)-1200).toLocaleString()} cal over your 1200 budget`);
   }
   if(!core.career && d.careerTasks){
-    flags.push(`No career task done`);
+    flags.push(careerNeeded>1 ? `Only ${careerDoneCount}/${careerNeeded} career tasks — catch-up mode needs 2` : `No career task done`);
   }
   if(d.ordered){
     flags.push(`Ordered Zepto/Zomato — ₹${Number(d.amountSpent||0).toLocaleString()} spent`);
@@ -467,7 +496,7 @@ function scoreForDay(d){
   if(!d.cravings || d.cravings.every(c=>c.resisted)) bonus+=10;
   else flags.push(`Craving slipped: ${d.cravings.filter(c=>!c.resisted).map(c=>c.trigger).join(', ')}`);
   score+=bonus;
-  return {score, core, bonus, flags};
+  return {score, core, bonus, flags, target, boostedTarget, careerNeeded};
 }
 
 function computeStreak(){
@@ -475,7 +504,7 @@ function computeStreak(){
   for(let i=TODAY_IDX;i>=1;i--){
     const ds = iso(dateOfIndex(i));
     const d = state.days[ds];
-    const s = scoreForDay(d);
+    const s = scoreForDay(d, ds);
     if(s && s.score>=70) streak++; else break;
   }
   return streak;
@@ -523,16 +552,16 @@ function computeRealityCheck(){
 
   // Daily-consistency rates: only counts days a field was actually logged,
   // and only flags a rule whose miss-rate is high enough to matter.
-  const days = Object.values(state.days);
+  const entries = Object.entries(state.days);
   const rateCheck = (label, metFn, loggedFn, consequence)=>{
-    const logged = days.filter(loggedFn);
+    const logged = entries.filter(([ds,d])=>loggedFn(d,ds));
     if(logged.length < 5) return; // not enough data to mean anything yet
-    const met = logged.filter(metFn).length;
+    const met = logged.filter(([ds,d])=>metFn(d,ds)).length;
     const rate = met/logged.length;
     if(rate < 0.6) items.push({label, done:met, target:logged.length, projected:Math.round(rate*100), consequence: consequence(Math.round(rate*100))});
   };
-  rateCheck('Step goal', d=>Number(d.steps||0)>=8000, d=>d.steps!=null, pct=>
-    `You've hit 8,000 steps on only ${pct}% of logged days. At that consistency, expect your fat-loss timeline to roughly double against what the 1200-cal plan assumes — diet alone isn't carrying this.`);
+  rateCheck('Step goal', (d,ds)=>Number(d.steps||0)>=stepTarget(dayIndexOf(new Date(ds+'T00:00:00'))), d=>d.steps!=null, pct=>
+    `You've hit your (ramping) step target on only ${pct}% of logged days. At that consistency, expect your fat-loss timeline to roughly double against what the 1200-cal plan assumes — diet alone isn't carrying this.`);
   rateCheck('Water goal', d=>Number(d.water||0)>=3, d=>d.water!=null, pct=>
     `3L water hit on only ${pct}% of logged days. Chronic under-hydration reads as hunger to your brain — part of why cravings keep winning.`);
   rateCheck('Sleep curfew', d=>d.sleep && minutesAfterNoon(d.sleep)<=SLEEP_TARGET, d=>!!d.sleep, pct=>
@@ -664,13 +693,20 @@ function renderDashboard(){
   const miniDone = careerVals.reduce((s,c)=>s+(c.mini1?1:0)+(c.mini2?1:0),0);
 
   const today = state.days[todayDate];
-  const sc = scoreForDay(today);
+  const sc = scoreForDay(today, todayDate);
   const tileFor = (label,ok,sub)=>{
     const cls = today ? (ok? 'ok':'bad') : 'warn';
     return `<div class="tile ${cls}"><div class="label">${label}</div><div class="value">${today? (ok?'On track':'Slipped') : 'Not logged'}</div><div class="sub">${sub||''}</div></div>`;
   };
 
+  const debt = catchUpDebt();
   host.innerHTML = `
+    ${debt>0 ? `
+    <div class="debt-alert">
+      <div class="debt-alert-icon">⚠️</div>
+      <div class="debt-alert-title">${debt} DAY${debt>1?'S':''} BEHIND</div>
+      <div class="debt-alert-body">Today's catch-up bar: <strong>${Math.round(stepTarget(TODAY_IDX)*catchUpBoost()).toLocaleString()} steps</strong> (+${Math.round((catchUpBoost()-1)*100)}%) and <strong>2 career tasks</strong> instead of 1. Clear it to pay down 1 day of debt — no guilt-logging the missed days, just move forward.</div>
+    </div>` : ''}
     <div class="hero">
       <div class="arc-wrap">
         <svg viewBox="0 0 220 220">
@@ -683,7 +719,7 @@ function renderDashboard(){
         <div class="arc-center"><div class="arc-day">${TODAY_IDX}</div><div class="arc-of">of ${TOTAL_DAYS} days &middot; ${pct}%</div></div>
       </div>
       <div class="hero-right">
-        <h1>The arc is rising.</h1>
+        <h1>${debt>0 ? 'The arc has stalled.' : 'The arc is rising.'}</h1>
         <p>Week ${CURRENT_WEEK} of 13 &middot; ${fmtShort(TODAY)} &middot; ${TOTAL_DAYS-TODAY_IDX} days left until Dec 30</p>
         <span class="streak-chip">\u{1F525} <span class="flame"></span> ${streak}-day streak (score 70+)</span>
         <span class="countdown-chip">Weight ${wDelta!=null ? (wDelta<=0?('↓ '+Math.abs(wDelta).toFixed(1)+'kg'):('↑ '+wDelta.toFixed(1)+'kg')) : 'log weight to start'}</span>
@@ -696,7 +732,7 @@ function renderDashboard(){
     <div class="section-title">Today's non-negotiables</div>
     <div class="grid grid-4">
       ${tileFor('Wake / Sleep', today && sc && sc.core.wake && sc.core.sleep, today? fmtTime(today.wake)+' → '+fmtTime(today.sleep):'')}
-      ${tileFor('Steps', today && sc && sc.core.steps, today?(Number(today.steps||0).toLocaleString()+' steps'):'')}
+      ${tileFor('Steps', today && sc && sc.core.steps, today?(Number(today.steps||0).toLocaleString()+' / '+sc.boostedTarget.toLocaleString()):'')}
       ${tileFor('Water & Calories', today && sc && sc.core.water && sc.core.clean, today?((today.water||0)+'L · '+(today.calories||'?')+'cal'):'')}
       ${tileFor('Career Task', today && sc && sc.core.career, today && sc? 'Score '+sc.score+'/100':'')}
     </div>
@@ -755,7 +791,7 @@ function weightSparkline(days){
 function renderToday(){
   const host=document.getElementById('view-today'); if(!host) return;
   const d = state.days[todayDate] || {};
-  const sc = scoreForDay(d);
+  const sc = scoreForDay(d, todayDate);
   const idx = dayIndexOf(new Date(todayDate+'T00:00:00'));
   const suggested = idx>=1 && idx<=TOTAL_DAYS ? relaxForIndex(idx) : RELAX[0];
   const relax = RELAX.find(r=>r.name===d.relaxChoice) || suggested;
@@ -780,76 +816,86 @@ function renderToday(){
       ${sc.flags.map(f=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;font-size:13px;color:var(--bad);"><span>&#9888;</span><span>${f}</span></div>`).join('')}
     </div>` : ''}
 
-    <div class="section-title" style="margin-top:0;">\u{1F3C3} Physical</div>
-    <div class="card">
-      <div class="fields-grid">
-        <label class="field"><span>Wake time</span>${timePicker('f-wake', d.wake)}<span class="faint" style="font-size:10.5px;">goal: by 7:30 AM</span></label>
-        <label class="field"><span>Sleep time</span>${timePicker('f-sleep', d.sleep)}<span class="faint" style="font-size:10.5px;">1:00 AM counts as 2h past the 11:00 PM curfew, not early</span></label>
-        <label class="field"><span>Steps</span><input type="number" id="f-steps" min="0" step="100" value="${d.steps??''}" placeholder="8000-10000"></label>
-        <label class="field"><span>Water (L)</span><input type="number" id="f-water" min="0" max="5" step="0.1" value="${d.water??''}" placeholder="3"></label>
-        <label class="field"><span>Weight (kg)</span><input type="number" id="f-weight" min="0" step="0.1" value="${d.weight??''}" placeholder="weekly is fine"></label>
+    <details class="today-section" open>
+      <summary class="section-title" style="margin-top:0;">\u{1F3C3} Physical</summary>
+      <div class="card">
+        <div class="fields-grid">
+          <label class="field"><span>Wake time</span>${timePicker('f-wake', d.wake)}<span class="faint" style="font-size:10.5px;">goal: by 7:30 AM</span></label>
+          <label class="field"><span>Sleep time</span>${timePicker('f-sleep', d.sleep)}<span class="faint" style="font-size:10.5px;">1:00 AM counts as 2h past the 11:00 PM curfew, not early</span></label>
+          <label class="field"><span>Steps</span><input type="number" id="f-steps" min="0" step="100" value="${d.steps??''}" placeholder="${sc.boostedTarget}"><span class="faint" style="font-size:10.5px;">today's target: ${sc.boostedTarget.toLocaleString()}${sc.boostedTarget>sc.target?' (boosted, catching up)':''} — ramping to 10,000 by week 6</span></label>
+          <label class="field"><span>Water (L)</span><input type="number" id="f-water" min="0" max="5" step="0.1" value="${d.water??''}" placeholder="3"></label>
+          <label class="field"><span>Weight (kg)</span><input type="number" id="f-weight" min="0" step="0.1" value="${d.weight??''}" placeholder="weekly is fine"></label>
+        </div>
       </div>
-    </div>
+    </details>
 
-    <div class="section-title">\u{1F9E0} Mental</div>
-    <div class="card">
-      <div class="fields-grid">
-        <label class="field"><span>Screen time (hrs)</span><input type="number" id="f-screen" min="0" step="0.5" value="${d.screenTime??''}"></label>
-        <label class="field"><span>Mood (1-5)</span>
-          <div style="display:flex;align-items:center;gap:10px;">
-            <input type="range" id="f-mood" min="1" max="5" step="1" value="${d.mood||3}" style="flex:1;">
-            <span id="moodVal" class="mono" style="font-size:18px;min-width:28px;text-align:center;">${MOOD_EMOJI[(d.mood||3)-1]}</span>
+    <details class="today-section">
+      <summary class="section-title">\u{1F9E0} Mental</summary>
+      <div class="card">
+        <div class="fields-grid">
+          <label class="field"><span>Screen time (hrs)</span><input type="number" id="f-screen" min="0" step="0.5" value="${d.screenTime??''}"></label>
+          <label class="field"><span>Mood (1-5)</span>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <input type="range" id="f-mood" min="1" max="5" step="1" value="${d.mood||3}" style="flex:1;">
+              <span id="moodVal" class="mono" style="font-size:18px;min-width:28px;text-align:center;">${MOOD_EMOJI[(d.mood||3)-1]}</span>
+            </div>
+          </label>
+        </div>
+        <label class="field" style="margin-top:12px;"><span>Relax activity — pick one${d.relaxChoice?'':' (suggested: '+suggested.name+')'}</span>
+          <select id="relaxPicker">${RELAX.map(r=>`<option value="${r.name}" ${r.name===relax.name?'selected':''}>${r.ico} ${r.name}</option>`).join('')}</select>
+        </label>
+        <div class="relax-card today" id="relaxCardToday" style="text-align:left;flex-direction:row;align-items:center;gap:12px;margin-top:10px;">
+          <div class="relax-ico" id="relaxCardIco">${relax.ico}</div>
+          <div style="flex:1;"><div class="relax-name" id="relaxCardDesc">${relax.desc}</div></div>
+          <button class="toggle ${d.relaxDone?'active-yes':''}" data-field="relaxDone" data-val="true" style="flex:none;width:auto;padding:8px 14px;">${d.relaxDone?'Done ✓':'Mark done'}</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="today-section">
+      <summary class="section-title">\u{1F4BC} Career</summary>
+      <div class="card">
+        <label class="field"><span>What did you actually do today?</span>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+            ${CAREER_TASKS.map(t=>`<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:400;color:var(--text);"><input type="checkbox" class="chk career-task-chk" data-key="${t.key}" ${d.careerTasks && d.careerTasks[t.key]?'checked':''}> ${t.label}</label>`).join('')}
           </div>
         </label>
+        <label class="field" style="margin-top:12px;max-width:220px;"><span>Focus hours</span><input type="number" id="f-focus" min="0" step="0.5" value="${d.focusHours??''}"></label>
       </div>
-      <label class="field" style="margin-top:12px;"><span>Relax activity — pick one${d.relaxChoice?'':' (suggested: '+suggested.name+')'}</span>
-        <select id="relaxPicker">${RELAX.map(r=>`<option value="${r.name}" ${r.name===relax.name?'selected':''}>${r.ico} ${r.name}</option>`).join('')}</select>
-      </label>
-      <div class="relax-card today" id="relaxCardToday" style="text-align:left;flex-direction:row;align-items:center;gap:12px;margin-top:10px;">
-        <div class="relax-ico" id="relaxCardIco">${relax.ico}</div>
-        <div style="flex:1;"><div class="relax-name" id="relaxCardDesc">${relax.desc}</div></div>
-        <button class="toggle ${d.relaxDone?'active-yes':''}" data-field="relaxDone" data-val="true" style="flex:none;width:auto;padding:8px 14px;">${d.relaxDone?'Done ✓':'Mark done'}</button>
-      </div>
-    </div>
+    </details>
 
-    <div class="section-title">\u{1F4BC} Career</div>
-    <div class="card">
-      <label class="field"><span>What did you actually do today?</span>
-        <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
-          ${CAREER_TASKS.map(t=>`<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:400;color:var(--text);"><input type="checkbox" class="chk career-task-chk" data-key="${t.key}" ${d.careerTasks && d.careerTasks[t.key]?'checked':''}> ${t.label}</label>`).join('')}
+    <details class="today-section">
+      <summary class="section-title">❤️ Health</summary>
+      <div class="card">
+        <div class="fields-grid">
+          <label class="field"><span>Calories</span><input type="number" id="f-calories" min="0" step="10" value="${d.calories??''}" placeholder="1200"></label>
+          <label class="field"><span>Stayed off junk / sodium-heavy food today?</span>
+            <div class="toggle-row"><button class="toggle ${d.junkFree? 'active-yes':''}" data-field="junkFree" data-val="true">Clean</button><button class="toggle ${d.junkFree===false? 'active-no':''}" data-field="junkFree" data-val="false">Slipped</button></div>
+          </label>
+          <label class="field"><span>Ordered Zepto / Zomato today?</span>
+            <div class="toggle-row"><button class="toggle ${d.ordered===false? 'active-yes':''}" data-field="ordered" data-val="false">No</button><button class="toggle ${d.ordered? 'active-no':''}" data-field="ordered" data-val="true">Yes</button></div>
+          </label>
         </div>
-      </label>
-      <label class="field" style="margin-top:12px;max-width:220px;"><span>Focus hours</span><input type="number" id="f-focus" min="0" step="0.5" value="${d.focusHours??''}"></label>
-    </div>
+        <label class="field" id="spentRow" style="margin-top:10px;max-width:220px;" ${d.ordered? '':'hidden'}><span>₹ Spent on that order</span><input type="number" id="f-spent" min="0" step="10" value="${d.amountSpent??''}" placeholder="0"></label>
+        <div class="section-title" style="margin:18px 0 8px;">Craving log</div>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="cravingTrigger" placeholder="trigger e.g. 4pm slump, stress" style="flex:1;">
+          <button class="btn secondary" id="addResisted">Resisted</button>
+          <button class="btn secondary" id="addSlipped">Slipped</button>
+        </div>
+        <div class="craving-list" id="cravingList"></div>
+      </div>
+    </details>
 
-    <div class="section-title">❤️ Health</div>
-    <div class="card">
-      <div class="fields-grid">
-        <label class="field"><span>Calories</span><input type="number" id="f-calories" min="0" step="10" value="${d.calories??''}" placeholder="1200"></label>
-        <label class="field"><span>Stayed off junk / sodium-heavy food today?</span>
-          <div class="toggle-row"><button class="toggle ${d.junkFree? 'active-yes':''}" data-field="junkFree" data-val="true">Clean</button><button class="toggle ${d.junkFree===false? 'active-no':''}" data-field="junkFree" data-val="false">Slipped</button></div>
-        </label>
-        <label class="field"><span>Ordered Zepto / Zomato today?</span>
-          <div class="toggle-row"><button class="toggle ${d.ordered===false? 'active-yes':''}" data-field="ordered" data-val="false">No</button><button class="toggle ${d.ordered? 'active-no':''}" data-field="ordered" data-val="true">Yes</button></div>
-        </label>
+    <details class="today-section">
+      <summary class="section-title">\u{1F4B0} Finance</summary>
+      <div class="card">
+        <div class="fields-grid">
+          <label class="field"><span>₹ Spent today (anything else — shopping, outings, etc.)</span><input type="number" id="f-otherspend" min="0" step="10" value="${d.otherSpend??''}" placeholder="0"></label>
+          <label class="field"><span>What was it for?</span><input type="text" id="f-othernote" value="${d.otherSpendNote||''}" placeholder="e.g. coffee, clothes, movie"></label>
+        </div>
       </div>
-      <label class="field" id="spentRow" style="margin-top:10px;max-width:220px;" ${d.ordered? '':'hidden'}><span>₹ Spent on that order</span><input type="number" id="f-spent" min="0" step="10" value="${d.amountSpent??''}" placeholder="0"></label>
-      <div class="section-title" style="margin:18px 0 8px;">Craving log</div>
-      <div style="display:flex;gap:8px;">
-        <input type="text" id="cravingTrigger" placeholder="trigger e.g. 4pm slump, stress" style="flex:1;">
-        <button class="btn secondary" id="addResisted">Resisted</button>
-        <button class="btn secondary" id="addSlipped">Slipped</button>
-      </div>
-      <div class="craving-list" id="cravingList"></div>
-    </div>
-
-    <div class="section-title">\u{1F4B0} Finance</div>
-    <div class="card">
-      <div class="fields-grid">
-        <label class="field"><span>₹ Spent today (anything else — shopping, outings, etc.)</span><input type="number" id="f-otherspend" min="0" step="10" value="${d.otherSpend??''}" placeholder="0"></label>
-        <label class="field"><span>What was it for?</span><input type="text" id="f-othernote" value="${d.otherSpendNote||''}" placeholder="e.g. coffee, clothes, movie"></label>
-      </div>
-    </div>
+    </details>
 
     <div class="card" style="margin-top:14px;">
       <label class="field"><span>Notes</span><textarea id="f-notes" placeholder="anything about today worth remembering">${d.notes||''}</textarea></label>
@@ -963,10 +1009,21 @@ function saveDayFromForm(){
     notes: val('f-notes')||'',
   };
   writeDoc({col:'days',id:todayDate}, patch).then(()=>{
-    const sc = scoreForDay(state.days[todayDate]);
+    const sc = scoreForDay(state.days[todayDate], todayDate);
     toast(sc? `Saved — score ${sc.score}/100${sc.flags.length? ' — '+sc.flags.length+' red flag'+(sc.flags.length>1?'s':''):''}` : 'Saved');
     if(sc && sc.score>=90 && window.confetti){
       confetti({particleCount:110, spread:75, origin:{y:0.6}, colors:['#e2601f','#c98a1f','#1f8a57']});
+    }
+    // Catch-up repayment: hitting the boosted bar on a debt day pays down 1 day of debt.
+    if(sc && catchUpDebt()>0 && sc.core.steps && sc.core.career){
+      const repaid = (state.profile.catchUpRepaid||0)+1;
+      writeDocQuiet({col:'profile',id:'main'}, {catchUpRepaid: repaid}).then(()=>{
+        state.profile.catchUpRepaid = repaid;
+        const remaining = catchUpDebt();
+        toast(remaining>0 ? `Caught up 1 day — ${remaining} day${remaining>1?'s':''} of debt left` : `Fully caught up! \u{1F525}`);
+        if(window.confetti) confetti({particleCount:160, spread:100, origin:{y:0.5}, colors:['#4f8cff','#8a5cf6','#1f8a57']});
+        renderDashboard();
+      });
     }
     renderDashboard();
   });
@@ -986,7 +1043,7 @@ function renderHistory(){
     return;
   }
   const rows = days.map(d=>{
-    const sc = scoreForDay(d);
+    const sc = scoreForDay(d, d.date);
     const dow = new Date(d.date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short'});
     return `<tr>
       <td>${fmtShort(new Date(d.date+'T00:00:00'))} <span class="faint">${dow}</span></td>
@@ -1389,7 +1446,7 @@ function exportExcel(){
   const wb = XLSX.utils.book_new();
   const blank = v => (v===undefined || v===null || v==='') ? '' : v;
   const days = allDaysSorted().map(d=>{
-    const sc = scoreForDay(d);
+    const sc = scoreForDay(d, d.date);
     const resisted = (d.cravings||[]).filter(c=>c.resisted).length;
     const slipped = (d.cravings||[]).filter(c=>!c.resisted).length;
     return {

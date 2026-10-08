@@ -260,3 +260,21 @@ table.history tbody tr:last-child td{border-bottom:none;}
 @keyframes nodePulse{0%,100%{box-shadow:0 0 0 4px rgba(226,96,31,0.18);}50%{box-shadow:0 0 0 9px rgba(226,96,31,0.08);}}
 .aie-detail-card{border-color:var(--accent);animation:fade .3s ease;}
 @media (prefers-reduced-motion: reduce){ .aie-node.current{animation:none;} }
+
+/* ---- catch-up debt alert ---- */
+.debt-alert{text-align:center;max-width:620px;margin:0 auto 22px;padding:26px 24px;border-radius:18px;background:linear-gradient(160deg, var(--bad-bg), var(--surface));border:2px solid var(--bad);box-shadow:0 10px 32px -10px rgba(193,63,63,0.35);animation:debtPulse 2.4s infinite;}
+.debt-alert-icon{font-size:34px;margin-bottom:6px;}
+.debt-alert-title{font-family:'Fraunces',serif;font-size:28px;font-weight:600;color:var(--bad);letter-spacing:.02em;margin-bottom:8px;}
+.debt-alert-body{font-size:14px;color:var(--text);line-height:1.6;max-width:480px;margin:0 auto;}
+.debt-alert-body strong{color:var(--bad);}
+@keyframes debtPulse{0%,100%{box-shadow:0 10px 32px -10px rgba(193,63,63,0.35);}50%{box-shadow:0 10px 40px -6px rgba(193,63,63,0.55);}}
+@media (prefers-reduced-motion: reduce){ .debt-alert{animation:none;} }
+
+/* ---- Today tab accordions ---- */
+.today-section{margin-bottom:14px;}
+.today-section > summary.section-title{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:4px 2px;user-select:none;}
+.today-section > summary.section-title::-webkit-details-marker{display:none;}
+.today-section > summary.section-title::before{content:'\25B8';display:inline-block;font-size:11px;color:var(--text-faint);transition:transform .15s;}
+.today-section[open] > summary.section-title::before{transform:rotate(90deg);}
+.today-section > summary.section-title:hover{color:var(--accent);}
+.today-section > .card{margin-top:6px;}
