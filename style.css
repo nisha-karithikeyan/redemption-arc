@@ -171,6 +171,46 @@ textarea{resize:vertical;min-height:60px;}
 .weekly-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 @media (max-width:700px){.weekly-fields{grid-template-columns:1fr;}}
 
+/* Weekly review sheet */
+.rv-pills{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px;}
+.rv-pill{flex:none;display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--text-dim);font:600 12.5px 'IBM Plex Sans',sans-serif;cursor:pointer;}
+.rv-pill.active{border-color:var(--accent);color:var(--text);box-shadow:0 0 0 1px var(--accent);}
+.rv-score{display:flex;align-items:center;gap:18px;}
+.rv-score-num{font:700 46px/1 'Fraunces',Georgia,serif;}
+.rv-score-num span{font-size:16px;color:var(--text-faint);font-weight:400;}
+.rv-score-num.good{color:var(--good);} .rv-score-num.warn{color:var(--warn);} .rv-score-num.bad{color:var(--bad);}
+.rv-grade{font-weight:600;font-size:15px;}
+.rv-sections{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 18px;margin-top:18px;}
+.rv-review{display:grid;grid-template-columns:1fr 3fr;gap:18px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line);}
+.rv-miss-list{columns:2;column-gap:24px;}
+.rv-miss{font-size:13px;padding:3px 0;color:var(--text-dim);break-inside:avoid;}
+.rv-miss strong{color:var(--bad);font-weight:600;}
+.rv-focus{font-size:13.5px;padding:3px 0;font-weight:600;}
+.rv-card{margin-bottom:12px;padding:14px 18px;}
+.rv-sec-title{font-weight:700;font-size:14.5px;margin-bottom:6px;}
+.rv-row{display:grid;grid-template-columns:minmax(0,2.2fr) 1fr 1fr 1fr 70px 56px;gap:10px;align-items:center;padding:8px 0 8px 10px;border-top:1px solid var(--line);font-size:13.5px;border-left:3px solid transparent;}
+.rv-row.met{border-left-color:var(--good);}
+.rv-row.missed{border-left-color:var(--bad);}
+.rv-head{border-top:none;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:600;padding-top:0;}
+.rv-goal{font-weight:500;}
+.rv-val input{width:100%;}
+.rv-met{display:flex;align-items:center;gap:6px;cursor:pointer;}
+.rv-pts{font-weight:600;text-align:right;}
+.rv-row.met .rv-pts{color:var(--good);}
+.rv-row.missed .rv-pts{color:var(--bad);}
+.rv-k{display:none;}
+@media (max-width:700px){
+  .rv-sections{grid-template-columns:1fr;}
+  .rv-review{grid-template-columns:1fr;}
+  .rv-miss-list{columns:1;}
+  .rv-score-num{font-size:38px;}
+  .rv-head{display:none;}
+  .rv-row{grid-template-columns:1fr 1fr;gap:8px 12px;}
+  .rv-goal{grid-column:1 / -1;}
+  .rv-k{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);}
+  .rv-pts{text-align:left;}
+}
+
 .date-strip{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
 .date-strip input[type=date]{font-size:14px;}
 .craving-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;}

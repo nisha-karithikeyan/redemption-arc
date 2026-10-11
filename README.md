@@ -38,7 +38,7 @@ Most habit apps track one thing, but real change rarely happens in one area. Sle
 | **Skills** | Mastery checklists for the skills you're building |
 | **Relax** | A daily rotating "do something good for yourself" activity |
 | **Finance** | Money saved vs. your goal, with a weekly chart |
-| **Weekly Review** | A 4-question Sunday check-in: body, career, money, mind |
+| **Weekly Review** | A scored review sheet for each week: 23 goals (steps, sleep, water, clean eating, career tasks, DSA, projects, posts, spending and more), each filled in from your logs with a "met" checkbox and a field for your own value. You get a score out of 100, a grade, what you missed and three goals to focus on next week, plus a short reflection |
 | **Milestones** | Day 30 / 60 / 90 checkpoints to capture how far you've come |
 
 ## Make it yours

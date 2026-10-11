@@ -1142,7 +1142,7 @@ function renderDSA(){
   `;
   host.querySelectorAll('.dsa-chk').forEach(c=>c.addEventListener('change', ()=>{
     const cur = state.dsa[c.dataset.id] || {};
-    writeDoc({col:'dsa', id:'checklist'}, {[c.dataset.id]: {...cur, done: c.checked}}).then(renderDSA);
+    writeDoc({col:'dsa', id:'checklist'}, {[c.dataset.id]: {...cur, done: c.checked, doneAt: c.checked? iso(new Date()) : null}}).then(renderDSA);
   }));
   host.querySelectorAll('.dsa-name-edit').forEach(inp=>inp.addEventListener('blur', ()=>{
     const cur = state.dsa[inp.dataset.id] || {};
@@ -1258,7 +1258,7 @@ function renderAieDetail(){
   host.querySelector('#aieComplete').addEventListener('click', ()=>{
     const xpBefore = aieXP(); const levelBefore = aieLevel(xpBefore);
     const newDone = !done;
-    writeDoc({col:'aie', id:'progress'}, {[n.id]: {done:newDone}}).then(()=>{
+    writeDoc({col:'aie', id:'progress'}, {[n.id]: {done:newDone, doneAt: newDone? iso(new Date()) : null}}).then(()=>{
       renderAIE();
       if(newDone){
         const xpAfter = aieXP(); const levelAfter = aieLevel(xpAfter);
@@ -1284,7 +1284,9 @@ function renderSkills(){
   }).join('');
   host.innerHTML = `<div class="card">${groups}</div>`;
   host.querySelectorAll('.chk').forEach(c=>c.addEventListener('change', ()=>{
-    writeDoc({col:'skills',id:'checklist'},{[c.dataset.id]: c.checked}).then(renderSkills);
+    // The completion date sits beside the flag (id + '__at') so the weekly
+    // review can count skills checked off in a given week.
+    writeDoc({col:'skills',id:'checklist'},{[c.dataset.id]: c.checked, [c.dataset.id+'__at']: c.checked? iso(new Date()) : null}).then(renderSkills);
   }));
 }
 
@@ -1418,26 +1420,236 @@ function renderMilestones(){
   }));
 }
 
-/* ======================= WEEKLY REVIEW ======================= */
+/* ======================= WEEKLY REVIEW SHEET ======================= */
+// What a fully on-track week looks like, goal by goal. `auto` reads the actual
+// from that week's logs; the sheet lets you type your own value or flip the
+// "met" box for anything the logs got wrong. `limit` goals are met at or under
+// target. target/auto get (days, wk) where days = that week's 7 day slots.
+const sumOf = (days, fn) => days.reduce((s,x)=>s+(x.d? fn(x.d,x) : 0), 0);
+const countOf = (days, fn) => days.filter(x=>x.d && fn(x.d,x)).length;
+const clockMins = hhmm => { const [h,m]=hhmm.split(':').map(Number); return h*60+m; };
+const datesOf = days => new Set(days.map(x=>x.date));
+const WEEK_SECTIONS = [
+ {id:'Body', icon:'\u{1F3C3}'}, {id:'Health', icon:'❤️'}, {id:'Mind', icon:'\u{1F9E0}'},
+ {id:'Career', icon:'\u{1F4BC}'}, {id:'Money', icon:'\u{1F4B0}'}, {id:'Consistency', icon:'\u{1F4C5}'},
+];
+const WEEK_GOALS = [
+ {key:'steps', sec:'Body', label:'Total steps', unit:'steps',
+   target:days=>days.reduce((s,x)=>s+stepTarget(x.idx),0), auto:days=>sumOf(days,d=>Number(d.steps||0))},
+ {key:'stepDays', sec:'Body', label:'Days hitting the step target', unit:'days',
+   target:days=>days.length, auto:days=>countOf(days,(d,x)=>Number(d.steps||0)>=stepTarget(x.idx))},
+ {key:'wake', sec:'Body', label:'Woke up by 7:30 AM', unit:'days',
+   target:days=>days.length, auto:days=>countOf(days,d=>d.wake && clockMins(d.wake)<=WAKE_TARGET)},
+ {key:'sleep', sec:'Body', label:'Asleep by 11:00 PM', unit:'days',
+   target:days=>days.length, auto:days=>countOf(days,d=>d.sleep && minutesAfterNoon(d.sleep)<=SLEEP_TARGET)},
+ {key:'water', sec:'Body', label:'Drank 3L water', unit:'days',
+   target:days=>days.length, auto:days=>countOf(days,d=>Number(d.water||0)>=3)},
+ {key:'weight', sec:'Body', label:'Weight logged', unit:'times',
+   target:()=>1, auto:days=>countOf(days,d=>d.weight!=null)},
+ {key:'clean', sec:'Health', label:'Clean eating (≤1200 cal, no junk)', unit:'days',
+   target:days=>days.length, auto:days=>countOf(days,d=>d.junkFree===true && Number(d.calories||9999)<=1200)},
+ {key:'slips', sec:'Health', label:'Cravings given in to', unit:'slips', limit:true,
+   target:()=>0, auto:days=>sumOf(days,d=>(d.cravings||[]).filter(c=>!c.resisted).length)},
+ {key:'relax', sec:'Mind', label:'Relax activity done', unit:'days',
+   target:days=>days.length, auto:days=>countOf(days,d=>d.relaxDone)},
+ {key:'screen', sec:'Mind', label:'Screen time 3h or less', unit:'days',
+   target:days=>days.length, auto:days=>countOf(days,d=>d.screenTime!=null && Number(d.screenTime)<=3)},
+ {key:'mood', sec:'Mind', label:'Mood logged', unit:'days',
+   target:days=>days.length, auto:days=>countOf(days,d=>d.mood)},
+ {key:'careerDays', sec:'Career', label:'Days with a career task done', unit:'days',
+   target:days=>days.length, auto:days=>countOf(days,d=>d.careerTasks && Object.values(d.careerTasks).some(Boolean))},
+ {key:'focus', sec:'Career', label:'Focus hours', unit:'h',
+   target:days=>days.length*2, auto:days=>sumOf(days,d=>Number(d.focusHours||0))},
+ {key:'dsa', sec:'Career', label:'DSA problems solved', unit:'problems',
+   target:()=>7, auto:days=>{ const ds=datesOf(days); return DSA_PROBLEMS.filter(p=>{const e=state.dsa[p.id]; return e && e.done && ds.has(e.doneAt);}).length; }},
+ {key:'production', sec:'Career', label:'Production project shipped', unit:'project',
+   target:()=>1, auto:(days,wk)=>(state.career[String(wk)]||{}).production?1:0},
+ {key:'minis', sec:'Career', label:'Mini projects shipped', unit:'projects',
+   target:()=>2, auto:(days,wk)=>{ const c=state.career[String(wk)]||{}; return (c.mini1?1:0)+(c.mini2?1:0); }},
+ {key:'posts', sec:'Career', label:'LinkedIn posts', unit:'posts',
+   target:()=>4, auto:(days,wk)=>Number((state.career[String(wk)]||{}).posts||0)},
+ // 17 roadmap nodes over 13 weeks: four weeks carry 2 nodes, the rest 1.
+ {key:'aie', sec:'Career', label:'AI Roadmap nodes learned', unit:'nodes',
+   target:(days,wk)=>[1,4,7,10].includes(wk)?2:1, auto:days=>{ const ds=datesOf(days); return AIE_NODES.filter(n=>{const e=state.aie[n.id]; return e && e.done && ds.has(e.doneAt);}).length; }},
+ {key:'skills', sec:'Career', label:'Skills checked off', unit:'skills',
+   target:()=>3, auto:days=>{ const ds=datesOf(days); return Object.entries(state.skills).filter(([k,v])=>k.endsWith('__at') && ds.has(v) && state.skills[k.slice(0,-4)]).length; }},
+ {key:'orders', sec:'Money', label:'Food delivery orders', unit:'orders', limit:true,
+   target:()=>0, auto:days=>countOf(days,d=>d.ordered)},
+ {key:'spend', sec:'Money', label:'Total spend (within weekly cap)', money:true, limit:true,
+   target:()=>state.profile.spendCap||3000, auto:days=>sumOf(days,d=>(d.ordered?Number(d.amountSpent||0):0)+Number(d.otherSpend||0))},
+ {key:'logged', sec:'Consistency', label:'Days logged', unit:'days',
+   target:days=>days.length, auto:days=>countOf(days,()=>true)},
+ {key:'score70', sec:'Consistency', label:'Days scoring 70+', unit:'days',
+   target:days=>days.length, auto:days=>countOf(days,(d,x)=>{const sc=scoreForDay(d,x.date); return sc && sc.score>=70;})},
+];
+let reviewWeek = CURRENT_WEEK;
+
+function weekDaysOf(wk){
+  const out=[];
+  for(let i=(wk-1)*7+1;i<=Math.min(wk*7,TOTAL_DAYS);i++){ const date=iso(dateOfIndex(i)); out.push({idx:i, date, d:state.days[date]}); }
+  return out;
+}
+const fmtNum = v => Number.isInteger(v) ? v.toLocaleString() : v.toFixed(1);
+function fmtGoal(g, v){
+  if(g.money) return '₹'+Math.round(v).toLocaleString();
+  const unit = v===1 && g.unit && g.unit.length>1 && g.unit.endsWith('s') ? g.unit.slice(0,-1) : g.unit;
+  return unit ? `${fmtNum(v)} ${unit}` : fmtNum(v);
+}
+
+// Met = full points. Missed = partial points for how close you got, capped at
+// 90% so a missed goal never scores the same as a met one.
+function evalWeek(wk){
+  const days = weekDaysOf(wk);
+  const w = state.weekly[String(wk)]||{};
+  const rows = WEEK_GOALS.map(g=>{
+    const target = g.target(days, wk);
+    const auto = g.auto(days, wk);
+    const ov = w.vals ? w.vals[g.key] : null;
+    const actual = ov!=null ? ov : auto;
+    const metAuto = g.limit ? actual<=target : actual>=target;
+    const metOv = w.met ? w.met[g.key] : null;
+    const met = metOv!=null ? metOv : metAuto;
+    const ratio = g.limit ? (actual<=target ? 1 : target>0 ? target/actual : 0) : (target>0 ? Math.min(1, actual/target) : 1);
+    return {g, target, auto, actual, overridden: ov!=null, met, metAuto, credit: met ? 1 : Math.min(ratio, 0.9)};
+  });
+  const score = Math.round(rows.reduce((s,r)=>s+r.credit,0)/rows.length*100);
+  const sections = WEEK_SECTIONS.map(sec=>{
+    const rs = rows.filter(r=>r.g.sec===sec.id);
+    return {...sec, met: rs.filter(r=>r.met).length, total: rs.length, pct: Math.round(rs.reduce((s,r)=>s+r.credit,0)/rs.length*100)};
+  });
+  return {rows, score, sections, metCount: rows.filter(r=>r.met).length};
+}
+function weekGrade(score){
+  if(score>=90) return {grade:'A', verdict:'Crushed it. This is what the arc looks like when it works.'};
+  if(score>=75) return {grade:'B', verdict:'Strong week. A few gaps, but the habits are holding.'};
+  if(score>=60) return {grade:'C', verdict:'Mixed week. The basics slipped in places, so tighten them before adding more.'};
+  if(score>=40) return {grade:'D', verdict:'Off track. Pick the three goals below and protect them first next week.'};
+  return {grade:'F', verdict:'Reset week. No guilt: start fresh Monday with just the three focus goals below.'};
+}
+function weekStatus(wk){
+  const first=(wk-1)*7+1, last=Math.min(wk*7,TOTAL_DAYS);
+  if(first>TODAY_IDX) return 'upcoming';
+  if(TODAY_IDX<=last) return 'progress';
+  return 'done';
+}
+
+function weeklySummaryHTML(wk, ev){
+  const status = weekStatus(wk);
+  if(status==='upcoming') return `<div class="faint" style="font-size:13.5px;">This week hasn't started yet. Below is everything you'll need to hit, so plan for it.</div>`;
+  const {grade, verdict} = weekGrade(ev.score);
+  const missed = ev.rows.filter(r=>!r.met).sort((a,b)=>a.credit-b.credit);
+  const shortBy = r => r.g.limit
+    ? `${fmtGoal(r.g, r.actual)} (limit ${r.g.money ? fmtGoal(r.g, r.target) : fmtNum(r.target)})`
+    : `${r.g.money ? fmtGoal(r.g, r.actual) : fmtNum(r.actual)} of ${fmtGoal(r.g, r.target)}, ${r.g.money ? fmtGoal(r.g, r.target-r.actual) : fmtNum(r.target-r.actual)} short`;
+  const dayNo = TODAY_IDX-(wk-1)*7;
+  return `
+    <div class="rv-score">
+      <div class="rv-score-num ${scorePillClass(ev.score)}">${ev.score}<span>/100</span></div>
+      <div>
+        <div class="rv-grade">Grade ${grade} &middot; ${ev.metCount} of ${ev.rows.length} goals met</div>
+        <div class="muted" style="font-size:13.5px;margin-top:2px;">${verdict}</div>
+        ${status==='progress' ? `<div class="faint" style="font-size:12px;margin-top:6px;">Week in progress: day ${dayNo} of 7. Targets are for the full week, so the score fills in as you go.</div>` : ''}
+      </div>
+    </div>
+    <div class="rv-sections">
+      ${ev.sections.map(s=>`<div><div class="bar-row"><span>${s.icon} ${s.id}</span><span>${s.met}/${s.total} met &middot; ${s.pct}%</span></div><div class="bar"><div style="width:${s.pct}%"></div></div></div>`).join('')}
+    </div>
+    ${missed.length ? `
+      <div class="rv-review">
+        <div><div class="section-title" style="margin:0 0 6px;">Focus for next week</div>
+          ${missed.slice(0,3).map((r,i)=>`<div class="rv-focus">${i+1}. ${r.g.label}</div>`).join('')}</div>
+        <div><div class="section-title" style="margin:0 0 6px;">Missed (${missed.length})</div>
+          <div class="rv-miss-list">${missed.map(r=>`<div class="rv-miss"><strong>${r.g.label}</strong>: ${shortBy(r)}</div>`).join('')}</div></div>
+      </div>` : `<div class="rv-review"><div class="rv-focus">Every goal met this week. Keep the same routine next week.</div></div>`}
+  `;
+}
+
 function renderWeekly(){
   const host=document.getElementById('view-weekly'); if(!host) return;
-  const cards = Array.from({length:13},(_,i)=>{
-    const wk=i+1; const w = state.weekly[String(wk)]||{};
-    const startD=fmtShort(addDays(START,(wk-1)*7)), endD=fmtShort(addDays(START,Math.min(wk*7-1,TOTAL_DAYS-1)));
-    return `<div class="weekly-card">
-      <h3>Week ${wk} <span class="faint" style="font-weight:400;font-size:12.5px;">${startD} &ndash; ${endD}</span></h3>
-      <div class="weekly-fields">
-        <label class="field"><span>Body (weight / steps / sleep)</span><textarea data-wk="${wk}" data-field="body">${w.body||''}</textarea></label>
-        <label class="field"><span>Career (shipped / posted)</span><textarea data-wk="${wk}" data-field="career">${w.career||''}</textarea></label>
-        <label class="field"><span>Money (saved / spent)</span><textarea data-wk="${wk}" data-field="money">${w.money||''}</textarea></label>
-        <label class="field"><span>Mind (one honest note)</span><textarea data-wk="${wk}" data-field="mind">${w.mind||''}</textarea></label>
-      </div>
-    </div>`;
+  const wk = reviewWeek;
+  const ev = evalWeek(wk);
+  const w = state.weekly[String(wk)]||{};
+  const status = weekStatus(wk);
+  const locked = status==='upcoming';
+  const startD=fmtShort(dateOfIndex((wk-1)*7+1)), endD=fmtShort(dateOfIndex(Math.min(wk*7,TOTAL_DAYS)));
+
+  const pills = Array.from({length:13},(_,i)=>{
+    const n=i+1; const st=weekStatus(n);
+    const sc = st==='upcoming' ? null : evalWeek(n).score;
+    return `<button class="rv-pill ${n===wk?'active':''}" data-wk="${n}">W${n}${sc!=null?` <span class="score-pill ${scorePillClass(sc)}">${sc}</span>`:''}</button>`;
   }).join('');
-  host.innerHTML = `<div class="section-title" style="margin-top:0;">Sunday ritual &middot; four short questions, every week</div><div class="grid grid-2">${cards}</div>`;
-  host.querySelectorAll('textarea[data-wk]').forEach(ta=>ta.addEventListener('blur', ()=>{
-    writeDoc({col:'weekly', id:ta.dataset.wk}, {[ta.dataset.field]: ta.value});
+
+  const rowHTML = r => `
+    <div class="rv-row ${locked?'':r.met?'met':'missed'}" data-key="${r.g.key}">
+      <div class="rv-goal">${r.g.label}</div>
+      <div><span class="rv-k">Target</span>${r.g.limit?'≤ ':''}${fmtGoal(r.g, r.target)}</div>
+      <div class="faint"><span class="rv-k">From logs</span>${locked?'—':fmtGoal(r.g, r.auto)}</div>
+      <label class="rv-val"><span class="rv-k">Your value</span><input type="number" min="0" step="any" data-key="${r.g.key}" value="${r.overridden?r.actual:''}" placeholder="${locked?'':r.auto}" ${locked?'disabled':''}></label>
+      <label class="rv-met"><input type="checkbox" class="chk" data-key="${r.g.key}" ${r.met&&!locked?'checked':''} ${locked?'disabled':''}><span>Met</span></label>
+      <div class="rv-pts">${locked?'':Math.round(r.credit*100)+'%'}</div>
+    </div>`;
+
+  host.innerHTML = `
+    <div class="rv-pills">${pills}</div>
+    <div class="card">
+      <h2 style="margin:0 0 2px;font-size:22px;">Week ${wk} review <span class="faint" style="font-family:'IBM Plex Sans',sans-serif;font-weight:400;font-size:13px;">${startD} &ndash; ${endD} &middot; ${WEEKS[wk-1].theme}</span></h2>
+      <div id="rvSummary" style="margin-top:14px;">${weeklySummaryHTML(wk, ev)}</div>
+    </div>
+
+    <div class="section-title">Review sheet <span class="faint" style="text-transform:none;font-weight:400;">— filled in from your logs. Type your own value or tick "Met" if the logs missed something; leave blank to use the logs.</span></div>
+    ${WEEK_SECTIONS.map(sec=>`
+      <div class="card rv-card">
+        <div class="rv-sec-title">${sec.icon} ${sec.id}</div>
+        <div class="rv-row rv-head"><div>Goal</div><div>Target</div><div>From logs</div><div>Your value</div><div>Met?</div><div>Points</div></div>
+        ${ev.rows.filter(r=>r.g.sec===sec.id).map(rowHTML).join('')}
+      </div>`).join('')}
+
+    <div class="section-title">Reflection</div>
+    <div class="card"><div class="weekly-fields">
+      <label class="field"><span>Body (weight / steps / sleep)</span><textarea data-field="body">${w.body||''}</textarea></label>
+      <label class="field"><span>Career (shipped / posted)</span><textarea data-field="career">${w.career||''}</textarea></label>
+      <label class="field"><span>Money (saved / spent)</span><textarea data-field="money">${w.money||''}</textarea></label>
+      <label class="field"><span>Mind (one honest note)</span><textarea data-field="mind">${w.mind||''}</textarea></label>
+    </div></div>
+  `;
+
+  host.querySelectorAll('.rv-pill').forEach(b=>b.addEventListener('click', ()=>{ reviewWeek=Number(b.dataset.wk); renderWeekly(); }));
+
+  // Overrides equal to what the logs say are stored as null, so the row
+  // goes back to following the logs instead of freezing a stale number.
+  const saveOverride = (field, key, v)=>{
+    const cur = state.weekly[String(wk)]||{};
+    writeDocQuiet({col:'weekly', id:String(wk)}, {[field]: {...(cur[field]||{}), [key]: v}}).then(patchWeekly);
+    patchWeekly();
+  };
+  host.querySelectorAll('.rv-val input').forEach(inp=>inp.addEventListener('change', ()=>{
+    const r = evalWeek(wk).rows.find(x=>x.g.key===inp.dataset.key);
+    const v = inp.value==='' ? null : Number(inp.value);
+    saveOverride('vals', inp.dataset.key, v===r.auto ? null : v);
   }));
+  host.querySelectorAll('.rv-met input').forEach(cb=>cb.addEventListener('change', ()=>{
+    const r = evalWeek(wk).rows.find(x=>x.g.key===cb.dataset.key);
+    saveOverride('met', cb.dataset.key, cb.checked===r.metAuto ? null : cb.checked);
+  }));
+  host.querySelectorAll('textarea[data-field]').forEach(ta=>ta.addEventListener('blur', ()=>{
+    writeDocQuiet({col:'weekly', id:String(wk)}, {[ta.dataset.field]: ta.value});
+  }));
+}
+
+// Updates scores in place after an edit, so typing through the sheet with
+// Tab never loses focus to a full re-render.
+function patchWeekly(){
+  const host=document.getElementById('view-weekly'); if(!host || weekStatus(reviewWeek)==='upcoming') return;
+  const ev = evalWeek(reviewWeek);
+  ev.rows.forEach(r=>{
+    const row = host.querySelector(`.rv-row[data-key="${r.g.key}"]`); if(!row) return;
+    row.classList.toggle('met', r.met); row.classList.toggle('missed', !r.met);
+    row.querySelector('.rv-met input').checked = r.met;
+    row.querySelector('.rv-pts').textContent = Math.round(r.credit*100)+'%';
+  });
+  document.getElementById('rvSummary').innerHTML = weeklySummaryHTML(reviewWeek, ev);
+  const pill = host.querySelector(`.rv-pill[data-wk="${reviewWeek}"] .score-pill`);
+  if(pill){ pill.textContent = ev.score; pill.className = 'score-pill '+scorePillClass(ev.score); }
 }
 
 /* ======================= EXPORT TO EXCEL ======================= */
@@ -1472,8 +1684,15 @@ function exportExcel(){
   const skillsRows=[]; Object.entries(SKILLS).forEach(([g,items])=>items.forEach(it=>skillsRows.push({Group:g, Skill:it, Done: state.skills[slug(g+'_'+it)]?'Yes':''})));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(skillsRows), 'Skills');
 
-  const weekly = Array.from({length:13},(_,i)=>{ const w=state.weekly[String(i+1)]||{}; return {Week:i+1, Body:w.body||'', Career:w.career||'', Money:w.money||'', Mind:w.mind||''}; });
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(weekly), 'Weekly Review');
+  const reviewRows=[], weeklyNotes=[];
+  for(let wk=1; wk<=13; wk++){
+    if(weekStatus(wk)==='upcoming') continue;
+    const ev = evalWeek(wk); const w=state.weekly[String(wk)]||{};
+    ev.rows.forEach(r=>reviewRows.push({Week:wk, Section:r.g.sec, Goal:r.g.label, Target:(r.g.limit?'≤ ':'')+fmtGoal(r.g,r.target), Actual:fmtGoal(r.g,r.actual), Met:r.met?'Yes':'No', Points:Math.round(r.credit*100)+'%'}));
+    weeklyNotes.push({Week:wk, Score:ev.score, Grade:weekGrade(ev.score).grade, 'Goals Met':`${ev.metCount}/${ev.rows.length}`, Body:w.body||'', Career:w.career||'', Money:w.money||'', Mind:w.mind||''});
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(weeklyNotes), 'Weekly Review');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reviewRows), 'Weekly Goals');
 
   const miles = MILESTONES.map(m=>{ const d=state.milestones[String(m)]||{}; return {Day:m, Date: iso(dateOfIndex(m)), Weight:d.weight||'', 'LinkedIn Followers':d.followers||'', Hair:d.hairNote||'', Portfolio:d.portfolioNote||''}; });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(miles), 'Milestones');
