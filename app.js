@@ -1587,19 +1587,23 @@ function fmtGoal(g, v){
 }
 
 // Met = full points. Missed = partial points for how close you got, capped at
-// 90% so a missed goal never scores the same as a met one.
+// 90% so a missed goal never scores the same as a met one. Limit goals (slips,
+// orders, spend) read 0 when nothing is logged, so they only earn credit for
+// logged days and only count as met once the whole week is logged.
 function evalWeek(wk){
   const days = weekDaysOf(wk);
   const w = state.weekly[String(wk)]||{};
+  const loggedDays = days.filter(x=>x.d).length;
+  const loggedShare = loggedDays/days.length;
   const rows = WEEK_GOALS.map(g=>{
     const target = g.target(days, wk);
     const auto = g.auto(days, wk);
     const ov = w.vals ? w.vals[g.key] : null;
     const actual = ov!=null ? ov : auto;
-    const metAuto = g.limit ? actual<=target : actual>=target;
+    const metAuto = g.limit ? actual<=target && loggedShare===1 : actual>=target;
     const metOv = w.met ? w.met[g.key] : null;
     const met = metOv!=null ? metOv : metAuto;
-    const ratio = g.limit ? (actual<=target ? 1 : target>0 ? target/actual : 0) : (target>0 ? Math.min(1, actual/target) : 1);
+    const ratio = g.limit ? (actual<=target ? 1 : target>0 ? target/actual : 0)*loggedShare : (target>0 ? Math.min(1, actual/target) : 1);
     return {g, target, auto, actual, overridden: ov!=null, met, metAuto, credit: met ? 1 : Math.min(ratio, 0.9)};
   });
   const score = Math.round(rows.reduce((s,r)=>s+r.credit,0)/rows.length*100);
@@ -1607,7 +1611,7 @@ function evalWeek(wk){
     const rs = rows.filter(r=>r.g.sec===sec.id);
     return {...sec, met: rs.filter(r=>r.met).length, total: rs.length, pct: Math.round(rs.reduce((s,r)=>s+r.credit,0)/rs.length*100)};
   });
-  return {rows, score, sections, metCount: rows.filter(r=>r.met).length};
+  return {rows, score, sections, loggedDays, metCount: rows.filter(r=>r.met).length};
 }
 function weekGrade(score){
   if(score>=90) return {grade:'A', verdict:'Crushed it. This is what the arc looks like when it works.'};
@@ -1623,16 +1627,40 @@ function weekStatus(wk){
   return 'done';
 }
 
-// One goal as a readable row: name, "done / target", and a thin progress bar.
+// What's left on a goal, said the way you'd say it to yourself.
+const plural = (n, word) => `${fmtNum(n)} ${word}${n===1?'':'s'}`;
+const GOAL_TODO = {
+  steps: n=>`Walk ${fmtNum(n)} more steps`,
+  stepDays: n=>`Hit your daily step goal on ${plural(n,'more day')}`,
+  wake: n=>`Wake up by 7:30 AM on ${plural(n,'more day')}`,
+  sleep: n=>`Be asleep by 11 PM on ${plural(n,'more day')}`,
+  water: n=>`Drink 3L of water on ${plural(n,'more day')}`,
+  weight: ()=>`Log your weight once`,
+  clean: n=>`Eat clean (≤1200 cal, no junk) on ${plural(n,'more day')}`,
+  relax: n=>`Do your relax activity on ${plural(n,'more day')}`,
+  screen: n=>`Keep screen time to 3h or less on ${plural(n,'more day')}`,
+  mood: n=>`Log your mood on ${plural(n,'more day')}`,
+  careerDays: n=>`Do a career task on ${plural(n,'more day')}`,
+  focus: n=>`Put in ${plural(n,'more focus hour')}`,
+  dsa: n=>`Solve ${plural(n,'more DSA problem')}`,
+  production: ()=>`Ship this week's production project`,
+  minis: n=>`Ship ${plural(n,'more mini project')}`,
+  posts: n=>`Publish ${plural(n,'more LinkedIn post')}`,
+  aie: n=>`Learn ${plural(n,'more AI Roadmap node')}`,
+  skills: n=>`Check off ${plural(n,'more skill')}`,
+  logged: n=>`Log ${plural(n,'more day')}`,
+  score70: n=>`Score 70+ on ${plural(n,'more day')}`,
+};
+
+// One goal as a readable row: what to do (or how it went) plus a progress bar.
 function goalLineHTML(r, mode){
   const pct = Math.round(r.credit*100);
-  const left = r.g.limit
-    ? (r.actual<=r.target ? 'within limit' : `${fmtGoal(r.g, r.actual)} (limit ${r.g.money ? fmtGoal(r.g, r.target) : fmtNum(r.target)})`)
-    : mode==='todo'
-      ? `${fmtGoal(r.g, r.target-r.actual)} to go`
-      : `${r.g.money ? fmtGoal(r.g, r.actual) : fmtNum(r.actual)} / ${fmtGoal(r.g, r.target)}`;
+  const text = mode==='todo' && GOAL_TODO[r.g.key] ? GOAL_TODO[r.g.key](Math.max(0, r.target-r.actual)) : r.g.label;
+  const val = r.g.limit
+    ? `${fmtGoal(r.g, r.actual)} (limit ${r.g.money ? fmtGoal(r.g, r.target) : fmtNum(r.target)})`
+    : `${r.g.money ? fmtGoal(r.g, r.actual) : fmtNum(r.actual)} / ${fmtGoal(r.g, r.target)}`;
   return `<div class="rv-line ${r.met?'met':''}">
-    <div class="rv-line-top"><span>${r.met?'✓ ':''}${r.g.label}</span><span class="rv-line-val">${left}</span></div>
+    <div class="rv-line-top"><span>${r.met?'✓ ':''}${text}</span><span class="rv-line-val">${val}</span></div>
     <div class="bar rv-line-bar"><div style="width:${pct}%"></div></div>
   </div>`;
 }
@@ -1649,23 +1677,30 @@ function weeklySummaryHTML(wk, ev){
   if(status==='progress'){
     const dayNo = TODAY_IDX-(wk-1)*7;
     const daysLeft = 7-dayNo;
+    const when = `Day ${dayNo} of 7 · ${daysLeft ? `${plural(daysLeft,'day')} left after today` : 'last day of the week'}`;
+    if(!ev.loggedDays) return `
+      <div class="rv-empty">
+        <div class="rv-empty-title">Nothing logged yet this week</div>
+        <div class="muted">${when}. Log today and this page fills in by itself: what you've done, and what's left for the week.</div>
+        <button class="btn" id="rvLogToday" style="margin-top:14px;">Log today</button>
+      </div>`;
     const todo = open.filter(r=>!r.g.limit);
-    const overLimit = open.filter(r=>r.g.limit);
+    const overLimit = ev.rows.filter(r=>r.g.limit && r.actual>r.target);
     return `
       <div class="rv-score">
-        <div class="rv-score-num neutral">${ev.score}<span>%</span></div>
+        <div class="rv-score-num neutral">${ev.metCount}<span>/${ev.rows.length}</span></div>
         <div>
-          <div class="rv-grade">of this week's goals done so far</div>
-          <div class="muted" style="font-size:13.5px;margin-top:2px;">Day ${dayNo} of 7 &middot; ${daysLeft ? `${daysLeft} day${daysLeft>1?'s':''} left after today` : 'last day of the week'} &middot; ${ev.metCount} of ${ev.rows.length} goals already hit. Your grade appears when the week ends on Sunday.</div>
+          <div class="rv-grade">goals done so far</div>
+          <div class="muted" style="font-size:13.5px;margin-top:2px;">${when}. Your grade comes when the week ends on Sunday.</div>
         </div>
       </div>
       ${sectionBars}
       ${overLimit.length ? `<div class="rv-alert">Over the limit: ${overLimit.map(r=>`<strong>${r.g.label}</strong> (${fmtGoal(r.g, r.actual)})`).join(', ')}</div>` : ''}
       ${todo.length ? `
         <div class="rv-block">
-          <div class="section-title" style="margin:0 0 8px;">Still to do this week</div>
-          <div class="rv-lines">${todo.slice(0,6).map(r=>goalLineHTML(r,'todo')).join('')}</div>
-          ${todo.length>6 ? `<details class="rv-more"><summary>Show ${todo.length-6} more</summary><div class="rv-lines">${todo.slice(6).map(r=>goalLineHTML(r,'todo')).join('')}</div></details>` : ''}
+          <div class="section-title" style="margin:0 0 8px;">Top priorities this week</div>
+          <div class="rv-lines">${todo.slice(0,3).map(r=>goalLineHTML(r,'todo')).join('')}</div>
+          ${todo.length>3 ? `<details class="rv-more"><summary>Everything left this week (${todo.length})</summary><div class="rv-lines">${todo.map(r=>goalLineHTML(r,'todo')).join('')}</div></details>` : ''}
         </div>` : `<div class="rv-block rv-focus">Every goal for this week is already hit. 🎉</div>`}
     `;
   }
@@ -1691,6 +1726,12 @@ function weeklySummaryHTML(wk, ev){
   `;
 }
 
+// Rows only turn red once the week is over; mid-week an unmet goal is just pending.
+function rowState(r, status){
+  if(status==='upcoming') return '';
+  return r.met ? 'met' : status==='done' ? 'missed' : 'pending';
+}
+
 function renderWeekly(){
   const host=document.getElementById('view-weekly'); if(!host) return;
   const wk = reviewWeek;
@@ -1703,11 +1744,11 @@ function renderWeekly(){
   const pills = Array.from({length:13},(_,i)=>{
     const n=i+1; const st=weekStatus(n);
     const sc = st==='upcoming' ? null : evalWeek(n).score;
-    return `<button class="rv-pill ${n===wk?'active':''}" data-wk="${n}">W${n}${sc!=null?` <span class="score-pill ${scorePillClass(sc)}">${sc}</span>`:''}</button>`;
+    return `<button class="rv-pill ${n===wk?'active':''}" data-wk="${n}">W${n}${sc!=null?` <span class="score-pill ${st==='done'?scorePillClass(sc):'live'}">${sc}</span>`:''}</button>`;
   }).join('');
 
   const rowHTML = r => `
-    <div class="rv-row ${locked?'':r.met?'met':'missed'}" data-key="${r.g.key}">
+    <div class="rv-row ${rowState(r, status)}" data-key="${r.g.key}">
       <div class="rv-goal">${r.g.label}</div>
       <div><span class="rv-k">Target</span>${r.g.limit?'≤ ':''}${fmtGoal(r.g, r.target)}</div>
       <div class="faint"><span class="rv-k">From logs</span>${locked?'—':fmtGoal(r.g, r.auto)}</div>
@@ -1741,6 +1782,7 @@ function renderWeekly(){
   `;
 
   host.querySelectorAll('.rv-pill').forEach(b=>b.addEventListener('click', ()=>{ reviewWeek=Number(b.dataset.wk); renderWeekly(); }));
+  wireLogToday();
 
   // Overrides equal to what the logs say are stored as null, so the row
   // goes back to following the logs instead of freezing a stale number.
@@ -1763,6 +1805,11 @@ function renderWeekly(){
   }));
 }
 
+function wireLogToday(){
+  const b = document.getElementById('rvLogToday');
+  if(b) b.addEventListener('click', ()=>{ todayDate=iso(TODAY); activeTab='today'; renderAll(); window.scrollTo({top:0,behavior:'smooth'}); });
+}
+
 // Updates scores in place after an edit, so typing through the sheet with
 // Tab never loses focus to a full re-render.
 function patchWeekly(){
@@ -1770,13 +1817,14 @@ function patchWeekly(){
   const ev = evalWeek(reviewWeek);
   ev.rows.forEach(r=>{
     const row = host.querySelector(`.rv-row[data-key="${r.g.key}"]`); if(!row) return;
-    row.classList.toggle('met', r.met); row.classList.toggle('missed', !r.met);
+    row.classList.remove('met','missed','pending'); row.classList.add(rowState(r, weekStatus(reviewWeek)));
     row.querySelector('.rv-met input').checked = r.met;
     row.querySelector('.rv-pts').textContent = Math.round(r.credit*100)+'%';
   });
   document.getElementById('rvSummary').innerHTML = weeklySummaryHTML(reviewWeek, ev);
+  wireLogToday();
   const pill = host.querySelector(`.rv-pill[data-wk="${reviewWeek}"] .score-pill`);
-  if(pill){ pill.textContent = ev.score; pill.className = 'score-pill '+scorePillClass(ev.score); }
+  if(pill){ pill.textContent = ev.score; pill.className = 'score-pill '+(weekStatus(reviewWeek)==='done'?scorePillClass(ev.score):'live'); }
 }
 
 /* ======================= EXPORT TO EXCEL ======================= */
