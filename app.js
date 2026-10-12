@@ -8,8 +8,8 @@ import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot }
 const CONFIG_IS_PLACEHOLDER = firebaseConfig.apiKey === "YOUR_API_KEY";
 
 /* ======================= CONSTANTS / CURRICULUM ======================= */
-const START = new Date(2026,9,1); // Oct 1 2026
-const TOTAL_DAYS = 91; // Oct(31)+Nov(30)+Dec(30)
+const START = new Date(2026,9,12); // Day 1: Oct 12 2026
+const TOTAL_DAYS = 91; // 13 full weeks, so Day 91 (Jan 10 2027) is 90 days after Day 1
 function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function fmtShort(d){return d.toLocaleDateString(undefined,{month:'short',day:'numeric'});}
@@ -61,6 +61,11 @@ function wireTimeField(id){
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 function dayIndexOf(date){return Math.floor((date-START)/864e5)+1;}
 function dateOfIndex(i){return addDays(START,i-1);}
+// Date labels all derive from START, so moving the start date is a one-line change.
+const END = dateOfIndex(TOTAL_DAYS);
+const fmtLong = d => d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+const END_LABEL = fmtShort(END);
+const MONTHS_LABEL = [...new Set(Array.from({length:TOTAL_DAYS},(_,i)=>dateOfIndex(i+1).toLocaleDateString(undefined,{month:'short'})))].join(' · ');
 const TODAY_IDX = Math.min(Math.max(dayIndexOf(TODAY),1),TOTAL_DAYS);
 function weekOfIndex(i){return Math.min(Math.ceil(i/7),13);}
 const CURRENT_WEEK = weekOfIndex(TODAY_IDX);
@@ -112,7 +117,7 @@ const CORE_RULES = [
 const MILESTONES = [30,60,90];
 const MOOD_EMOJI = ["\u{1F62B}","\u{1F615}","\u{1F610}","\u{1F642}","\u{1F60A}"]; // 1..5
 
-// A different affirmation each day of the 91 (cycles if you outlast the list) —
+// A different affirmation each day of the arc (cycles if you outlast the list) —
 // shown as a celebratory overlay on a clean day. Deterministic by day index so
 // it's not random spam, just genuinely different day to day.
 const CLEAN_AFFIRMATIONS = [
@@ -373,7 +378,11 @@ function subscribeAll(){
   unsubs = [];
   ['days','career','weekly','milestones'].forEach(col=>{
     const un = onSnapshot(collection(db,'users',uid,col), snap=>{
-      const obj={}; snap.forEach(d=>obj[d.id]=d.data());
+      const obj={};
+      // Days from before this arc's baseline (or after its end) stay in
+      // Firestore untouched but are left out, so a restarted arc starts clean.
+      const first=iso(addDays(START,-1)), last=iso(END);
+      snap.forEach(d=>{ if(col!=='days' || (d.id>=first && d.id<=last)) obj[d.id]=d.data(); });
       state[col]=obj; renderFromSync();
     }, err=>console.error(col,err));
     unsubs.push(un);
@@ -436,8 +445,12 @@ function missedDaysCount(){
   for(let i=1;i<TODAY_IDX;i++){ if(!state.days[iso(dateOfIndex(i))]) n++; }
   return n;
 }
+// Repayments are tagged with the arc's start date so a restart begins debt-free.
+function catchUpRepaid(){
+  return state.profile.catchUpStart===iso(START) ? (state.profile.catchUpRepaid||0) : 0;
+}
 function catchUpDebt(){
-  return Math.max(0, missedDaysCount() - (state.profile.catchUpRepaid||0));
+  return Math.max(0, missedDaysCount() - catchUpRepaid());
 }
 function catchUpBoost(){
   return 1 + Math.min(catchUpDebt(),5)*0.2; // +20% per missed day, capped at +100%
@@ -542,9 +555,9 @@ function computeRealityCheck(){
   };
 
   pace(dsaSolved, 90, 'DSA sheet', (proj,short)=>
-    `At your current solve rate you finish with ~${proj}/90 problems by Dec 30 — ${short} short. That's not enough pattern coverage to recognize problems on sight in an interview; you'll be deriving from scratch under time pressure instead of recalling.`);
+    `At your current solve rate you finish with ~${proj}/90 problems by ${END_LABEL} — ${short} short. That's not enough pattern coverage to recognize problems on sight in an interview; you'll be deriving from scratch under time pressure instead of recalling.`);
   pace(postsTotal, 48, 'LinkedIn posts', (proj,short)=>
-    `Current posting rate projects to ~${proj}/48 posts by Dec 30, ${short} short of target. A profile with that few posts over 3 months reads as dormant to a recruiter scanning it, not someone building in public.`);
+    `Current posting rate projects to ~${proj}/48 posts by ${END_LABEL}, ${short} short of target. A profile with that few posts over 3 months reads as dormant to a recruiter scanning it, not someone building in public.`);
   pace(prodDone, 12, 'Production projects', (proj,short)=>
     `You're on pace for ~${proj}/12 production-grade projects, ${short} short. A portfolio showing ${proj} finished projects is a weak signal sitting next to other candidates showing 10+.`);
   pace(miniDone, 24, 'Mini projects', (proj,short)=>
@@ -604,6 +617,7 @@ function renderAll(){
   document.getElementById('gate').innerHTML = '';
   document.getElementById('tabs').hidden = false;
   document.getElementById('footerNote').hidden = false;
+  document.getElementById('footerDates').textContent = `${TOTAL_DAYS} days · ${fmtLong(START)} – ${fmtLong(END)}`;
   renderAccount();
   renderTabs();
   const host = document.getElementById('views');
@@ -647,7 +661,7 @@ function renderGate(){
       <div class="gate-card">
         <svg width="40" height="40" viewBox="0 0 24 24"><path d="M12 2c2 3-1 4-1 7a3 3 0 1 0 6 0c0-1-.4-1.8-1-2.5 2.3 1.3 4 4 4 7.2C20 18.6 16.4 22 12 22S4 18.6 4 13.7c0-3 1.4-5.4 3.4-7C6.8 8 6.5 9.4 7 11c.6-3 2-5.3 5-9Z" fill="var(--accent)"/></svg>
         <h1>Redemption Arc</h1>
-        <p>91 days. Oct 1 &ndash; Dec 30, 2026. Sign in with Google to load your tracker &mdash; your data lives in your own Firebase project under your account, the same on every device.</p>
+        <p>${TOTAL_DAYS} days. ${fmtLong(START)} &ndash; ${fmtLong(END)}. Sign in with Google to load your tracker &mdash; your data lives in your own Firebase project under your account, the same on every device.</p>
         <button class="google-btn" id="googleSignIn">
           <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.9 14.3-5.1l-6.6-5.4C29.6 35.4 26.9 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.6 5.1C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.6l6.6 5.4C41.5 36 44 30.6 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>
           Sign in with Google
@@ -720,7 +734,7 @@ function renderDashboard(){
       </div>
       <div class="hero-right">
         <h1>${debt>0 ? 'The arc has stalled.' : 'The arc is rising.'}</h1>
-        <p>Week ${CURRENT_WEEK} of 13 &middot; ${fmtShort(TODAY)} &middot; ${TOTAL_DAYS-TODAY_IDX} days left until Dec 30</p>
+        <p>Week ${CURRENT_WEEK} of 13 &middot; ${fmtShort(TODAY)} &middot; ${TOTAL_DAYS-TODAY_IDX} days left until ${END_LABEL}</p>
         <span class="streak-chip">\u{1F525} <span class="flame"></span> ${streak}-day streak (score 70+)</span>
         <span class="countdown-chip">Weight ${wDelta!=null ? (wDelta<=0?('↓ '+Math.abs(wDelta).toFixed(1)+'kg'):('↑ '+wDelta.toFixed(1)+'kg')) : 'log weight to start'}</span>
         <span class="countdown-chip">₹${totalSpent.toLocaleString()} spent total (${orderCount} order${orderCount===1?'':'s'})</span>
@@ -753,7 +767,7 @@ function renderDashboard(){
     <div class="section-title">\u{1F4C9} Reality check — where this pace actually ends</div>
     <div class="card" style="border-color:var(--good);color:var(--good);font-size:13.5px;">Every tracked pace is currently on target for Day 90. That's the only thing keeping this projection clean — it recalculates from your real numbers every time you log.</div>`; })()}
 
-    <div class="section-title">Career output (Oct &ndash; Dec)</div>
+    <div class="section-title">Career output (${MONTHS_LABEL.split(' · ')[0]} &ndash; ${MONTHS_LABEL.split(' · ').slice(-1)[0]})</div>
     <div class="card">
       <div class="bar-row"><span>LinkedIn posts</span><span class="num">${postsTotal} / 48</span></div>
       <div class="bar"><div style="width:${Math.min(100,postsTotal/48*100)}%"></div></div>
@@ -801,7 +815,7 @@ function renderToday(){
   host.innerHTML = `
     <div class="date-strip">
       <label class="field" style="flex:none;"><span>Date</span><input type="date" id="dateInput" value="${todayDate}" min="${iso(addDays(START,-1))}" max="${iso(addDays(START,TOTAL_DAYS-1))}"></label>
-      ${iso(new Date(todayDate+'T00:00:00')) === iso(addDays(START,-1)) ? `<span class="faint" style="font-size:11.5px;">Sep 30 — your baseline day, logged before Day 1 officially starts</span>` : ''}
+      ${iso(new Date(todayDate+'T00:00:00')) === iso(addDays(START,-1)) ? `<span class="faint" style="font-size:11.5px;">${fmtShort(addDays(START,-1))} — your baseline day, logged before Day 1 officially starts</span>` : ''}
       <div style="flex:1"></div>
       <div style="display:flex;align-items:center;gap:12px;">
         <div class="score-ring">
@@ -1016,9 +1030,8 @@ function saveDayFromForm(){
     }
     // Catch-up repayment: hitting the boosted bar on a debt day pays down 1 day of debt.
     if(sc && catchUpDebt()>0 && sc.core.steps && sc.core.career){
-      const repaid = (state.profile.catchUpRepaid||0)+1;
-      writeDocQuiet({col:'profile',id:'main'}, {catchUpRepaid: repaid}).then(()=>{
-        state.profile.catchUpRepaid = repaid;
+      const repaid = catchUpRepaid()+1;
+      writeDocQuiet({col:'profile',id:'main'}, {catchUpRepaid: repaid, catchUpStart: iso(START)}).then(()=>{
         const remaining = catchUpDebt();
         toast(remaining>0 ? `Caught up 1 day — ${remaining} day${remaining>1?'s':''} of debt left` : `Fully caught up! \u{1F525}`);
         if(window.confetti) confetti({particleCount:160, spread:100, origin:{y:0.5}, colors:['#4f8cff','#8a5cf6','#1f8a57']});
@@ -1483,6 +1496,7 @@ const WEEK_GOALS = [
    target:days=>days.length, auto:days=>countOf(days,(d,x)=>{const sc=scoreForDay(d,x.date); return sc && sc.score>=70;})},
 ];
 let reviewWeek = CURRENT_WEEK;
+document.getElementById('headerTag').textContent = MONTHS_LABEL;
 
 function weekDaysOf(wk){
   const out=[];
