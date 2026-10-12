@@ -751,6 +751,9 @@ function renderDashboard(){
       ${tileFor('Career Task', today && sc && sc.core.career, today && sc? 'Score '+sc.score+'/100':'')}
     </div>
 
+    <div class="section-title">Calendar</div>
+    <div class="card" id="dashCalendar">${calendarHTML()}</div>
+
     ${sc && sc.flags.length ? `
     <div class="section-title">Red flags today</div>
     <div class="card" style="border-color:var(--bad);">
@@ -783,6 +786,79 @@ function renderDashboard(){
 
   requestAnimationFrame(()=>{ host.querySelector('.arc-fill').style.strokeDashoffset = off; });
   host.querySelector('#exportBtn').addEventListener('click', exportExcel);
+  wireCalendar();
+}
+
+/* ======================= DASHBOARD CALENDAR ======================= */
+// One month at a time, Mon–Sun rows to match the arc's weeks. Each day is
+// coloured by its score; past days with no entry show as missed.
+const ARC_MONTHS = (()=>{ const out=[]; let d=new Date(START.getFullYear(),START.getMonth(),1);
+  while(d<=END){ out.push(new Date(d)); d=new Date(d.getFullYear(),d.getMonth()+1,1); } return out; })();
+let calMonthIdx = Math.max(0, ARC_MONTHS.findIndex(m=>m.getFullYear()===TODAY.getFullYear() && m.getMonth()===TODAY.getMonth()));
+
+function calendarHTML(){
+  const month = ARC_MONTHS[calMonthIdx];
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth()+1, 0).getDate();
+  const lead = (month.getDay()+6)%7; // Monday-first offset
+  const cells = [];
+  for(let i=0;i<lead;i++) cells.push(null);
+  for(let n=1;n<=daysInMonth;n++) cells.push(new Date(month.getFullYear(), month.getMonth(), n));
+  while(cells.length%7) cells.push(null);
+
+  let logged=0, scoreSum=0, missed=0;
+  const cellHTML = date=>{
+    if(!date) return `<div class="cal-cell empty"></div>`;
+    const idx = dayIndexOf(date), ds = iso(date);
+    const inArc = idx>=1 && idx<=TOTAL_DAYS;
+    const isToday = ds===iso(TODAY);
+    if(!inArc) return `<div class="cal-cell outside"><span class="cal-n">${date.getDate()}</span></div>`;
+    const d = state.days[ds];
+    const sc = d ? scoreForDay(d, ds) : null;
+    const future = idx>TODAY_IDX;
+    let cls='future', label='';
+    if(sc){ cls=scorePillClass(sc.score); label=sc.score; logged++; scoreSum+=sc.score; }
+    else if(!future && !isToday){ cls='missed'; label='—'; missed++; }
+    const milestone = MILESTONES.includes(idx);
+    const title = `Day ${idx} · ${fmtShort(date)}${sc?` · score ${sc.score}`:cls==='missed'?' · not logged':''}${milestone?` · Day ${idx} milestone`:''}`;
+    return `<button class="cal-cell ${cls} ${isToday?'today':''}" data-date="${ds}" title="${title}" ${future?'disabled':''}>
+      <span class="cal-n">${date.getDate()}</span>${milestone?'<span class="cal-flag">\u{1F3C1}</span>':''}
+      <span class="cal-s">${label}</span></button>`;
+  };
+  const rows=[];
+  for(let r=0;r<cells.length;r+=7){
+    const week = cells.slice(r,r+7);
+    const firstInArc = week.find(c=>c && dayIndexOf(c)>=1 && dayIndexOf(c)<=TOTAL_DAYS);
+    const wk = firstInArc ? weekOfIndex(dayIndexOf(firstInArc)) : null;
+    rows.push(`${wk?`<button class="cal-wk" data-wk="${wk}" title="Open Week ${wk} review">W${wk}</button>`:'<div class="cal-wk"></div>'}${week.map(cellHTML).join('')}`);
+  }
+  const monthName = month.toLocaleDateString(undefined,{month:'long', year:'numeric'});
+  return `
+    <div class="cal-head">
+      <button class="cal-nav" id="calPrev" ${calMonthIdx===0?'disabled':''} aria-label="Previous month">‹</button>
+      <div class="cal-title">${monthName}</div>
+      <button class="cal-nav" id="calNext" ${calMonthIdx===ARC_MONTHS.length-1?'disabled':''} aria-label="Next month">›</button>
+    </div>
+    <div class="cal-grid">
+      <div></div>${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}
+      ${rows.join('')}
+    </div>
+    <div class="cal-foot">
+      <span>${logged} logged${logged?` · avg score ${Math.round(scoreSum/logged)}`:''}${missed?` · ${missed} missed`:''}</span>
+      <span class="cal-legend"><i class="good"></i>85+ <i class="warn"></i>60–84 <i class="bad"></i>&lt;60 <i class="missed"></i>missed</span>
+    </div>`;
+}
+
+function wireCalendar(){
+  const box = document.getElementById('dashCalendar'); if(!box) return;
+  const rerender = ()=>{ box.innerHTML = calendarHTML(); wireCalendar(); };
+  box.querySelector('#calPrev').addEventListener('click', ()=>{ calMonthIdx--; rerender(); });
+  box.querySelector('#calNext').addEventListener('click', ()=>{ calMonthIdx++; rerender(); });
+  box.querySelectorAll('.cal-cell[data-date]:not([disabled])').forEach(b=>b.addEventListener('click', ()=>{
+    todayDate = b.dataset.date; activeTab='today'; renderAll(); window.scrollTo({top:0,behavior:'smooth'});
+  }));
+  box.querySelectorAll('.cal-wk[data-wk]').forEach(b=>b.addEventListener('click', ()=>{
+    reviewWeek = Number(b.dataset.wk); activeTab='weekly'; renderAll(); window.scrollTo({top:0,behavior:'smooth'});
+  }));
 }
 
 function weightSparkline(days){
@@ -1547,34 +1623,71 @@ function weekStatus(wk){
   return 'done';
 }
 
+// One goal as a readable row: name, "done / target", and a thin progress bar.
+function goalLineHTML(r, mode){
+  const pct = Math.round(r.credit*100);
+  const left = r.g.limit
+    ? (r.actual<=r.target ? 'within limit' : `${fmtGoal(r.g, r.actual)} (limit ${r.g.money ? fmtGoal(r.g, r.target) : fmtNum(r.target)})`)
+    : mode==='todo'
+      ? `${fmtGoal(r.g, r.target-r.actual)} to go`
+      : `${r.g.money ? fmtGoal(r.g, r.actual) : fmtNum(r.actual)} / ${fmtGoal(r.g, r.target)}`;
+  return `<div class="rv-line ${r.met?'met':''}">
+    <div class="rv-line-top"><span>${r.met?'✓ ':''}${r.g.label}</span><span class="rv-line-val">${left}</span></div>
+    <div class="bar rv-line-bar"><div style="width:${pct}%"></div></div>
+  </div>`;
+}
+
 function weeklySummaryHTML(wk, ev){
   const status = weekStatus(wk);
-  if(status==='upcoming') return `<div class="faint" style="font-size:13.5px;">This week hasn't started yet. Below is everything you'll need to hit, so plan for it.</div>`;
+  if(status==='upcoming') return `<div class="muted" style="font-size:14px;">This week hasn't started yet. The sheet below shows everything you'll aim for, so you can plan ahead.</div>`;
+  const sectionBars = `<div class="rv-sections">
+      ${ev.sections.map(s=>`<div><div class="bar-row"><span>${s.icon} ${s.id}</span><span>${s.met} of ${s.total} done</span></div><div class="bar"><div style="width:${s.pct}%"></div></div></div>`).join('')}
+    </div>`;
+  const open = ev.rows.filter(r=>!r.met).sort((a,b)=>a.credit-b.credit);
+
+  // Mid-week the targets are for the whole week, so this is progress, not a verdict.
+  if(status==='progress'){
+    const dayNo = TODAY_IDX-(wk-1)*7;
+    const daysLeft = 7-dayNo;
+    const todo = open.filter(r=>!r.g.limit);
+    const overLimit = open.filter(r=>r.g.limit);
+    return `
+      <div class="rv-score">
+        <div class="rv-score-num neutral">${ev.score}<span>%</span></div>
+        <div>
+          <div class="rv-grade">of this week's goals done so far</div>
+          <div class="muted" style="font-size:13.5px;margin-top:2px;">Day ${dayNo} of 7 &middot; ${daysLeft ? `${daysLeft} day${daysLeft>1?'s':''} left after today` : 'last day of the week'} &middot; ${ev.metCount} of ${ev.rows.length} goals already hit. Your grade appears when the week ends on Sunday.</div>
+        </div>
+      </div>
+      ${sectionBars}
+      ${overLimit.length ? `<div class="rv-alert">Over the limit: ${overLimit.map(r=>`<strong>${r.g.label}</strong> (${fmtGoal(r.g, r.actual)})`).join(', ')}</div>` : ''}
+      ${todo.length ? `
+        <div class="rv-block">
+          <div class="section-title" style="margin:0 0 8px;">Still to do this week</div>
+          <div class="rv-lines">${todo.slice(0,6).map(r=>goalLineHTML(r,'todo')).join('')}</div>
+          ${todo.length>6 ? `<details class="rv-more"><summary>Show ${todo.length-6} more</summary><div class="rv-lines">${todo.slice(6).map(r=>goalLineHTML(r,'todo')).join('')}</div></details>` : ''}
+        </div>` : `<div class="rv-block rv-focus">Every goal for this week is already hit. 🎉</div>`}
+    `;
+  }
+
   const {grade, verdict} = weekGrade(ev.score);
-  const missed = ev.rows.filter(r=>!r.met).sort((a,b)=>a.credit-b.credit);
-  const shortBy = r => r.g.limit
-    ? `${fmtGoal(r.g, r.actual)} (limit ${r.g.money ? fmtGoal(r.g, r.target) : fmtNum(r.target)})`
-    : `${r.g.money ? fmtGoal(r.g, r.actual) : fmtNum(r.actual)} of ${fmtGoal(r.g, r.target)}, ${r.g.money ? fmtGoal(r.g, r.target-r.actual) : fmtNum(r.target-r.actual)} short`;
-  const dayNo = TODAY_IDX-(wk-1)*7;
+  const met = ev.rows.filter(r=>r.met);
   return `
     <div class="rv-score">
       <div class="rv-score-num ${scorePillClass(ev.score)}">${ev.score}<span>/100</span></div>
       <div>
         <div class="rv-grade">Grade ${grade} &middot; ${ev.metCount} of ${ev.rows.length} goals met</div>
         <div class="muted" style="font-size:13.5px;margin-top:2px;">${verdict}</div>
-        ${status==='progress' ? `<div class="faint" style="font-size:12px;margin-top:6px;">Week in progress: day ${dayNo} of 7. Targets are for the full week, so the score fills in as you go.</div>` : ''}
       </div>
     </div>
-    <div class="rv-sections">
-      ${ev.sections.map(s=>`<div><div class="bar-row"><span>${s.icon} ${s.id}</span><span>${s.met}/${s.total} met &middot; ${s.pct}%</span></div><div class="bar"><div style="width:${s.pct}%"></div></div></div>`).join('')}
-    </div>
-    ${missed.length ? `
-      <div class="rv-review">
-        <div><div class="section-title" style="margin:0 0 6px;">Focus for next week</div>
-          ${missed.slice(0,3).map((r,i)=>`<div class="rv-focus">${i+1}. ${r.g.label}</div>`).join('')}</div>
-        <div><div class="section-title" style="margin:0 0 6px;">Missed (${missed.length})</div>
-          <div class="rv-miss-list">${missed.map(r=>`<div class="rv-miss"><strong>${r.g.label}</strong>: ${shortBy(r)}</div>`).join('')}</div></div>
-      </div>` : `<div class="rv-review"><div class="rv-focus">Every goal met this week. Keep the same routine next week.</div></div>`}
+    ${sectionBars}
+    ${open.length ? `
+      <div class="rv-block">
+        <div class="section-title" style="margin:0 0 8px;">Focus for next week</div>
+        <div class="rv-lines">${open.slice(0,3).map(r=>goalLineHTML(r,'done')).join('')}</div>
+        <details class="rv-more"><summary>See all ${open.length} missed goal${open.length>1?'s':''}</summary><div class="rv-lines">${open.map(r=>goalLineHTML(r,'done')).join('')}</div></details>
+        ${met.length ? `<details class="rv-more"><summary>See the ${met.length} goal${met.length>1?'s':''} you hit</summary><div class="rv-lines">${met.map(r=>goalLineHTML(r,'done')).join('')}</div></details>` : ''}
+      </div>` : `<div class="rv-block rv-focus">Every goal met this week. Keep the same routine next week.</div>`}
   `;
 }
 
